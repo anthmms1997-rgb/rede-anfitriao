@@ -20,7 +20,8 @@ import {
   Settings,
   UserCog,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  EyeOff
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede, type UsuarioAcesso } from './lib/supabase';
 import { validarConteudoRelato } from './lib/moderacao';
@@ -58,6 +59,12 @@ export default function App() {
     }
   });
 
+  // Proteção visual contra captura/perda de foco
+  const [telaProtegida, setTelaProtegida] = useState(false);
+  const [carimboTempo, setCarimboTempo] = useState(() =>
+    new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  );
+
   // Estados da Tela de Login
   const [loginInput, setLoginInput] = useState('');
   const [senhaLogin, setSenhaLogin] = useState('');
@@ -70,7 +77,7 @@ export default function App() {
   const [erroPrimeiroAcesso, setErroPrimeiroAcesso] = useState<string | null>(null);
   const [salvandoPrimeiroAcesso, setSalvandoPrimeiroAcesso] = useState(false);
 
-  // Estados do Modal "Trocar Minha Senha" (para qualquer usuário logado)
+  // Estados do Modal "Trocar Minha Senha"
   const [modalTrocarMinhaSenha, setModalTrocarMinhaSenha] = useState(false);
   const [senhaAtualInput, setSenhaAtualInput] = useState('');
   const [minhaNovaSenha, setMinhaNovaSenha] = useState('');
@@ -118,6 +125,66 @@ export default function App() {
     const textoCompleto = [nomeHospede, acompanhanteInput, ...acompanhantes, relato].join(' ');
     return validarConteudoRelato(textoCompleto);
   }, [nomeHospede, acompanhanteInput, acompanhantes, relato]);
+
+  // Atualiza carimbo da marca d'água a cada minuto
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCarimboTempo(new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Camadas de proteção contra captura, cópia, clique direito e perda de foco
+  useEffect(() => {
+    if (!usuarioLogado) return;
+
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      e.preventDefault();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+
+      if (e.key === 'PrintScreen') {
+        setTelaProtegida(true);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText('').catch(() => {});
+        }
+        setTimeout(() => setTelaProtegida(false), 2500);
+      }
+
+      if ((e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !isField) {
+        e.preventDefault();
+      }
+    };
+
+    const handleBlur = () => setTelaProtegida(true);
+    const handleFocus = () => setTelaProtegida(false);
+    const handleVisibilityChange = () => {
+      setTelaProtegida(document.hidden);
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [usuarioLogado]);
 
   useEffect(() => {
     if (usuarioLogado && !usuarioLogado.primeiro_acesso) {
@@ -216,7 +283,6 @@ export default function App() {
     setSalvandoMinhaSenha(true);
     setErroMinhaSenha(null);
 
-    // Confere a senha atual antes de atualizar
     const { data: verificado } = await supabase
       .from('usuarios_acesso')
       .select('id')
@@ -259,6 +325,7 @@ export default function App() {
     setBusca('');
     setAdminAberto(false);
     setModalTrocarMinhaSenha(false);
+    setTelaProtegida(false);
   }
 
   async function carregarAvaliacoes() {
@@ -583,7 +650,7 @@ export default function App() {
           </form>
 
           <p className="text-[11px] text-slate-500 text-center mt-6 leading-relaxed">
-            Uso restrito à gestão operacional e prevenção de riscos. Cada acesso é vinculado ao respectivo responsável.
+            Uso restrito à gestão operacional e prevenção de riscos. Cada acesso é rastreado e vinculado ao respectivo responsável.
           </p>
         </div>
       </div>
@@ -675,8 +742,40 @@ export default function App() {
     );
   }
 
+  const textoMarcaDagua = `${usuarioLogado.nome_exibicao} • @${usuarioLogado.login} • ${carimboTempo}`;
+
   return (
-    <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col relative overflow-x-hidden">
+      {/* MARCA D'ÁGUA DINÂMICA DE RASTREABILIDADE (FIXA SOBRE A TELA SEM BLOQUEAR CLIQUES) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-40 overflow-hidden select-none opacity-[0.045]"
+      >
+        <div className="w-[160%] h-[160%] -ml-[30%] -mt-[20%] flex flex-wrap gap-x-16 gap-y-20 -rotate-24 items-center justify-center">
+          {Array.from({ length: 36 }).map((_, idx) => (
+            <span
+              key={idx}
+              className="text-xs sm:text-sm font-bold tracking-widest uppercase text-gold-400 whitespace-nowrap"
+            >
+              {textoMarcaDagua}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* PELÍCULA DE DESFOQUE AUTOMÁTICO AO PERDER O FOCO DA JANELA */}
+      {telaProtegida && (
+        <div className="fixed inset-0 z-50 bg-navy-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gold-500/15 border border-gold-500/40 flex items-center justify-center mb-4">
+            <EyeOff className="w-8 h-8 text-gold-400" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Tela Protegida por Sigilo</h3>
+          <p className="text-sm text-slate-400 max-w-md">
+            O conteúdo foi ocultado automaticamente porque a janela perdeu o foco. Clique na página para retomar a consulta.
+          </p>
+        </div>
+      )}
+
       {/* Navbar Executiva */}
       <header className="sticky top-0 z-30 bg-navy-900/95 backdrop-blur-md border-b border-gold-500/20 shadow-lg">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-2">
@@ -790,7 +889,7 @@ export default function App() {
               Exibindo <strong className="text-gold-400">{avaliacoesFiltradas.length}</strong>{' '}
               {avaliacoesFiltradas.length === 1 ? 'registro encontrado' : 'registros encontrados'}
             </span>
-            <span>Busca automática em titulares e acompanhantes</span>
+            <span>Sessão rastreada: @{usuarioLogado.login}</span>
           </div>
         </div>
 
@@ -935,11 +1034,11 @@ export default function App() {
               Base privada de uso interno. Cada anfitrião identificado responde integralmente pela veracidade e comprovação dos fatos relatados.
             </span>
           </div>
-          <span className="text-slate-500 shrink-0">Uso confidencial • Proibida reprodução externa</span>
+          <span className="text-slate-500 shrink-0">Uso confidencial • Capturas rastreadas por usuário</span>
         </div>
       </footer>
 
-      {/* MODAL TROCAR MINHA SENHA (PARA QUALQUER USUÁRIO LOGADO) */}
+      {/* MODAL TROCAR MINHA SENHA */}
       {modalTrocarMinhaSenha && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
@@ -1038,7 +1137,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL PAINEL ADMIN (GERENCIAMENTO DE LOGINS E SENHAS) */}
+      {/* MODAL PAINEL ADMIN */}
       {adminAberto && usuarioLogado.is_admin && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-8">
@@ -1056,7 +1155,6 @@ export default function App() {
             </div>
 
             <div className="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
-              {/* Formulário de Criação de Novo Acesso */}
               <form
                 onSubmit={handleCriarUsuario}
                 className="bg-navy-950/80 border border-slate-800 rounded-xl p-5 space-y-4"
@@ -1123,7 +1221,6 @@ export default function App() {
                 </div>
               </form>
 
-              {/* Lista de Logins Ativos */}
               <div>
                 <h4 className="text-sm font-semibold text-white mb-3">
                   Usuários Autorizados ({usuariosLista.length})
@@ -1243,7 +1340,6 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSalvar} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-              {/* Identificação Automática do Autor Logado */}
               <div className="bg-navy-950/90 border border-gold-500/25 rounded-xl px-4 py-3 flex items-center justify-between gap-2 text-xs">
                 <span className="text-slate-400 flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-gold-500" />
@@ -1254,7 +1350,6 @@ export default function App() {
                 </strong>
               </div>
 
-              {/* Aviso de Bloqueio Automático */}
               {!validacaoGeral.aprovado && (
                 <div className="bg-rose-500/15 border border-rose-500/50 text-rose-200 text-xs px-4 py-3 rounded-xl flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
@@ -1265,7 +1360,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Nome Completo do Hóspede */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
                   Nome Completo do Hóspede Titular *
@@ -1280,7 +1374,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Acompanhantes Dinâmicos */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
                   Acompanhantes (Opcional)
@@ -1330,7 +1423,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Tags Rápidas */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-2">
                   Tags de Ocorrência (Selecione o que aconteceu)
@@ -1358,7 +1450,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Relato da Experiência */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
                   Relato Objetivo da Ocorrência *
@@ -1378,7 +1469,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Canal da Reserva */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
                   Canal da Reserva
@@ -1397,7 +1487,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Termo de Responsabilidade */}
               <label className="flex items-start gap-2.5 bg-navy-950/80 border border-slate-800 rounded-xl p-3.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1411,7 +1500,6 @@ export default function App() {
                 </span>
               </label>
 
-              {/* Botões de Ação */}
               <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -1433,7 +1521,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal de Confirmação de Exclusão com Senha */}
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO COM SENHA */}
       {registroParaExcluir && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-navy-900 border border-rose-500/40 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">

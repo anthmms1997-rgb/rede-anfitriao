@@ -1,9 +1,23 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #061021;
-  color: #F8FAFC;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+@layer base {
+  body {
+    background-color: #060f1e;
+    color: #f8fafc;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea, select {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+@media print {
+  body {
+    display: none !important;
+  }
 }
