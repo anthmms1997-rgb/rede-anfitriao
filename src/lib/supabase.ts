@@ -19,3 +19,12 @@ export interface AvaliacaoHospede {
   anfitriao_nome: string;
   plataforma: string;
 }
+
+export interface UsuarioAcesso {
+  id: string;
+  created_at: string;
+  login: string;
+  senha?: string;
+  nome_exibicao: string;
+  is_admin: boolean;
+}

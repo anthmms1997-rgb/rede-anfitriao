@@ -16,9 +16,13 @@ import {
   Lock,
   LogOut,
   KeyRound,
-  Scale
+  Scale,
+  Settings,
+  UserCog,
+  Key,
+  ShieldCheck
 } from 'lucide-react';
-import { supabase, type AvaliacaoHospede } from './lib/supabase';
+import { supabase, type AvaliacaoHospede, type UsuarioAcesso } from './lib/supabase';
 import { validarConteudoRelato } from './lib/moderacao';
 
 interface TagOption {
@@ -41,17 +45,26 @@ const TAGS_DISPONIVEIS: TagOption[] = [
   { label: 'Não recomendado', type: 'danger' },
 ];
 
-const SENHA_ACESSO = '15975300';
 const SENHA_EXCLUSAO = '15975300';
-const STORAGE_AUTH_KEY = 'rede_anfitriao_auth_v1';
+const STORAGE_USER_KEY = 'rede_anfitriao_user_v2';
 
 export default function App() {
-  const [autenticado, setAutenticado] = useState<boolean>(() => {
-    return sessionStorage.getItem(STORAGE_AUTH_KEY) === 'true';
+  const [usuarioLogado, setUsuarioLogado] = useState<UsuarioAcesso | null>(() => {
+    try {
+      const salvo = sessionStorage.getItem(STORAGE_USER_KEY);
+      return salvo ? JSON.parse(salvo) : null;
+    } catch {
+      return null;
+    }
   });
-  const [senhaLogin, setSenhaLogin] = useState('');
-  const [erroLogin, setErroLogin] = useState(false);
 
+  // Estados da Tela de Login
+  const [loginInput, setLoginInput] = useState('');
+  const [senhaLogin, setSenhaLogin] = useState('');
+  const [erroLogin, setErroLogin] = useState<string | null>(null);
+  const [autenticando, setAutenticando] = useState(false);
+
+  // Estados da Base de Ocorrências
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoHospede[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
@@ -59,51 +72,83 @@ export default function App() {
   const [enviando, setEnviando] = useState(false);
   const [mensagemBanner, setMensagemBanner] = useState<string | null>(null);
 
-  // Estados do modal de exclusão
+  // Estados do Modal de Exclusão de Ocorrência
   const [registroParaExcluir, setRegistroParaExcluir] = useState<AvaliacaoHospede | null>(null);
   const [senhaDigitada, setSenhaDigitada] = useState('');
   const [erroSenha, setErroSenha] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
-  // Estados do formulário
+  // Estados do Painel Admin (Gerenciamento de Usuários)
+  const [adminAberto, setAdminAberto] = useState(false);
+  const [usuariosLista, setUsuariosLista] = useState<UsuarioAcesso[]>([]);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
+  const [novoLogin, setNovoLogin] = useState('');
+  const [novoNomeExibicao, setNovoNomeExibicao] = useState('');
+  const [novaSenhaUsuario, setNovaSenhaUsuario] = useState('');
+  const [novoIsAdmin, setNovoIsAdmin] = useState(false);
+  const [criandoUsuario, setCriandoUsuario] = useState(false);
+  const [editandoSenhaId, setEditandoSenhaId] = useState<string | null>(null);
+  const [senhaAlteradaInput, setSenhaAlteradaInput] = useState('');
+
+  // Estados do Formulário de Ocorrência
   const [nomeHospede, setNomeHospede] = useState('');
   const [acompanhanteInput, setAcompanhanteInput] = useState('');
   const [acompanhantes, setAcompanhantes] = useState<string[]>([]);
   const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
   const [relato, setRelato] = useState('');
-  const [anfitriaoNome, setAnfitriaoNome] = useState('');
   const [plataforma, setPlataforma] = useState('Airbnb');
   const [aceiteResponsabilidade, setAceiteResponsabilidade] = useState(false);
 
-  // Validação em tempo real de todos os campos de texto
+  // Validação automática em tempo real
   const validacaoGeral = useMemo(() => {
-    const textoCompleto = [nomeHospede, acompanhanteInput, ...acompanhantes, relato, anfitriaoNome].join(' ');
+    const textoCompleto = [nomeHospede, acompanhanteInput, ...acompanhantes, relato].join(' ');
     return validarConteudoRelato(textoCompleto);
-  }, [nomeHospede, acompanhanteInput, acompanhantes, relato, anfitriaoNome]);
+  }, [nomeHospede, acompanhanteInput, acompanhantes, relato]);
 
   useEffect(() => {
-    if (autenticado) {
+    if (usuarioLogado) {
       carregarAvaliacoes();
     }
-  }, [autenticado]);
+  }, [usuarioLogado]);
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (senhaLogin === SENHA_ACESSO) {
-      sessionStorage.setItem(STORAGE_AUTH_KEY, 'true');
-      setAutenticado(true);
-      setErroLogin(false);
-      setSenhaLogin('');
-    } else {
-      setErroLogin(true);
+    if (!loginInput.trim() || !senhaLogin) return;
+
+    setAutenticando(true);
+    setErroLogin(null);
+
+    const { data, error } = await supabase
+      .from('usuarios_acesso')
+      .select('id, created_at, login, nome_exibicao, is_admin')
+      .eq('login', loginInput.trim().toLowerCase())
+      .eq('senha', senhaLogin)
+      .maybeSingle();
+
+    setAutenticando(false);
+
+    if (error) {
+      setErroLogin('Erro ao conectar ao servidor de autenticação.');
+      return;
     }
+
+    if (!data) {
+      setErroLogin('Login ou senha inválidos.');
+      return;
+    }
+
+    sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(data));
+    setUsuarioLogado(data);
+    setLoginInput('');
+    setSenhaLogin('');
   }
 
   function handleLogout() {
-    sessionStorage.removeItem(STORAGE_AUTH_KEY);
-    setAutenticado(false);
+    sessionStorage.removeItem(STORAGE_USER_KEY);
+    setUsuarioLogado(null);
     setAvaliacoes([]);
     setBusca('');
+    setAdminAberto(false);
   }
 
   async function carregarAvaliacoes() {
@@ -117,6 +162,98 @@ export default function App() {
       setAvaliacoes(data);
     }
     setLoading(false);
+  }
+
+  async function carregarUsuarios() {
+    setCarregandoUsuarios(true);
+    const { data, error } = await supabase
+      .from('usuarios_acesso')
+      .select('id, created_at, login, nome_exibicao, is_admin')
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      setUsuariosLista(data);
+    }
+    setCarregandoUsuarios(false);
+  }
+
+  function abrirPainelAdmin() {
+    setAdminAberto(true);
+    carregarUsuarios();
+  }
+
+  async function handleCriarUsuario(e: React.FormEvent) {
+    e.preventDefault();
+    if (!novoLogin.trim() || !novaSenhaUsuario.trim()) return;
+
+    const loginNormalizado = novoLogin.trim().toLowerCase().replace(/\s+/g, '.');
+    const nomeFinal = novoNomeExibicao.trim() || novoLogin.trim();
+
+    setCriandoUsuario(true);
+    const { error } = await supabase.from('usuarios_acesso').insert([
+      {
+        login: loginNormalizado,
+        senha: novaSenhaUsuario.trim(),
+        nome_exibicao: nomeFinal,
+        is_admin: novoIsAdmin,
+      },
+    ]);
+    setCriandoUsuario(false);
+
+    if (error) {
+      if (error.code === '23505') {
+        alert('Já existe um usuário cadastrado com este login.');
+      } else {
+        alert('Erro ao criar acesso: ' + error.message);
+      }
+      return;
+    }
+
+    setNovoLogin('');
+    setNovoNomeExibicao('');
+    setNovaSenhaUsuario('');
+    setNovoIsAdmin(false);
+    mostrarAviso(`Acesso "${loginNormalizado}" criado com sucesso!`);
+    carregarUsuarios();
+  }
+
+  async function handleAlterarSenhaUsuario(id: string) {
+    if (!senhaAlteradaInput.trim()) return;
+
+    const { error } = await supabase
+      .from('usuarios_acesso')
+      .update({ senha: senhaAlteradaInput.trim() })
+      .eq('id', id);
+
+    if (!error) {
+      setEditandoSenhaId(null);
+      setSenhaAlteradaInput('');
+      mostrarAviso('Senha atualizada com sucesso!');
+    } else {
+      alert('Erro ao atualizar senha: ' + error.message);
+    }
+  }
+
+  async function handleExcluirUsuario(usuario: UsuarioAcesso) {
+    if (usuario.login === 'admin') {
+      alert('O usuário administrador principal não pode ser excluído.');
+      return;
+    }
+
+    const confirmar = window.confirm(`Deseja realmente revogar e excluir o acesso de "${usuario.login}"?`);
+    if (!confirmar) return;
+
+    const { error } = await supabase
+      .from('usuarios_acesso')
+      .delete()
+      .eq('id', usuario.id);
+
+    if (!error) {
+      mostrarAviso(`Acesso "${usuario.login}" removido.`);
+      carregarUsuarios();
+    } else {
+      alert('Erro ao excluir usuário: ' + error.message);
+    }
   }
 
   function mostrarAviso(texto: string) {
@@ -160,21 +297,26 @@ export default function App() {
 
   async function handleSalvar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade) return;
+    if (!usuarioLogado || !nomeHospede.trim() || !relato.trim() || !aceiteResponsabilidade) return;
 
     const listaFinalAcompanhantes = [...acompanhantes];
     if (acompanhanteInput.trim() && !listaFinalAcompanhantes.includes(acompanhanteInput.trim())) {
       listaFinalAcompanhantes.push(acompanhanteInput.trim());
     }
 
-    // Dupla checagem antes de enviar ao Supabase
     const checkFinal = validarConteudoRelato(
-      [nomeHospede, ...listaFinalAcompanhantes, relato, anfitriaoNome].join(' ')
+      [nomeHospede, ...listaFinalAcompanhantes, relato].join(' ')
     );
     if (!checkFinal.aprovado) {
       alert(checkFinal.motivo);
       return;
     }
+
+    // Identificação automática vinculada ao login conectado
+    const autorAutomatico =
+      usuarioLogado.nome_exibicao.toLowerCase() !== usuarioLogado.login.toLowerCase()
+        ? `${usuarioLogado.nome_exibicao} (${usuarioLogado.login})`
+        : usuarioLogado.login;
 
     setEnviando(true);
     const { error } = await supabase.from('avaliacoes_hospedes').insert([
@@ -183,7 +325,7 @@ export default function App() {
         acompanhantes: listaFinalAcompanhantes,
         tags: tagsSelecionadas,
         relato: relato.trim(),
-        anfitriao_nome: anfitriaoNome.trim(),
+        anfitriao_nome: autorAutomatico,
         plataforma,
       },
     ]);
@@ -198,7 +340,7 @@ export default function App() {
       setRelato('');
       setAceiteResponsabilidade(false);
       setModalAberto(false);
-      mostrarAviso('Ocorrência registrada com sucesso na Rede Anfitrião!');
+      mostrarAviso('Ocorrência registrada com sucesso!');
       carregarAvaliacoes();
     } else {
       alert('Publicação bloqueada: ' + error.message);
@@ -254,8 +396,8 @@ export default function App() {
     });
   }
 
-  // TELA DE BLOQUEIO PRIVADA
-  if (!autenticado) {
+  // TELA DE LOGIN INDIVIDUAL (USUÁRIO + SENHA)
+  if (!usuarioLogado) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full bg-navy-900 border border-gold-500/30 rounded-2xl p-8 shadow-2xl">
@@ -270,44 +412,64 @@ export default function App() {
               Ambiente Privado • Acesso Restrito
             </p>
             <p className="text-sm text-slate-400 mt-3">
-              Ferramenta interna exclusiva para anfitriões parceiros autorizados. Insira a chave de acesso para continuar.
+              Identifique-se com seu login e senha autorizados para acessar a base operacional.
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Chave de Acesso
+                Login de Acesso
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                autoCapitalize="none"
+                value={loginInput}
+                onChange={(e) => {
+                  setLoginInput(e.target.value);
+                  setErroLogin(null);
+                }}
+                placeholder="Digite seu usuário..."
+                className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Senha
               </label>
               <input
                 type="password"
                 required
-                autoFocus
                 value={senhaLogin}
                 onChange={(e) => {
                   setSenhaLogin(e.target.value);
-                  setErroLogin(false);
+                  setErroLogin(null);
                 }}
-                placeholder="Digite a senha de acesso..."
+                placeholder="••••••••"
                 className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white outline-none"
               />
-              {erroLogin && (
-                <p className="text-xs text-rose-400 mt-1.5">
-                  Chave de acesso inválida. Verifique com a administração.
-                </p>
-              )}
             </div>
+
+            {erroLogin && (
+              <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                {erroLogin}
+              </p>
+            )}
 
             <button
               type="submit"
-              className="w-full bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-gold-500/15"
+              disabled={autenticando}
+              className="w-full bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-gold-500/15"
             >
-              Entrar no Sistema
+              {autenticando ? 'Verificando...' : 'Entrar no Sistema'}
             </button>
           </form>
 
           <p className="text-[11px] text-slate-500 text-center mt-6 leading-relaxed">
-            Uso restrito à gestão operacional e prevenção de riscos. É proibida a divulgação externa das informações contidas neste ambiente.
+            Uso restrito à gestão operacional e prevenção de riscos. Cada acesso é vinculado ao respectivo responsável.
           </p>
         </div>
       </div>
@@ -328,12 +490,23 @@ export default function App() {
                 Rede <span className="text-gold-500">Anfitrião</span>
               </h1>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Ambiente privado de consulta operacional entre anfitriões
+                Conectado como: <strong className="text-gold-400">{usuarioLogado.nome_exibicao}</strong> ({usuarioLogado.login})
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {usuarioLogado.is_admin && (
+              <button
+                onClick={abrirPainelAdmin}
+                className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 font-medium px-3 py-2.5 rounded-xl transition-all text-xs sm:text-sm"
+                title="Gerenciar logins e senhas de acesso"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="hidden md:inline">Painel Admin</span>
+              </button>
+            )}
+
             <button
               onClick={() => setModalAberto(true)}
               className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-sm"
@@ -345,7 +518,7 @@ export default function App() {
             <button
               onClick={handleLogout}
               className="p-2.5 rounded-xl bg-navy-800 hover:bg-navy-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
-              title="Bloquear tela / Sair"
+              title="Sair da conta"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -467,7 +640,7 @@ export default function App() {
                       <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-slate-400">
                         <span className="inline-flex items-center gap-1.5">
                           <Building2 className="w-3.5 h-3.5 text-gold-500" />
-                          Relatado por: <strong className="text-slate-300">{item.anfitriao_nome}</strong>
+                          Registrado por: <strong className="text-slate-300">{item.anfitriao_nome}</strong>
                         </span>
                         <span className="inline-flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 text-gold-500" />
@@ -545,14 +718,196 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Scale className="w-4 h-4 text-gold-500 shrink-0" />
             <span>
-              Base privada de uso interno. Cada anfitrião é integralmente responsável pela veracidade e comprovação dos fatos relatados.
+              Base privada de uso interno. Cada anfitrião identificado responde integralmente pela veracidade e comprovação dos fatos relatados.
             </span>
           </div>
           <span className="text-slate-500 shrink-0">Uso confidencial • Proibida reprodução externa</span>
         </div>
       </footer>
 
-      {/* Modal de Novo Relato */}
+      {/* MODAL PAINEL ADMIN (GERENCIAMENTO DE LOGINS E SENHAS) */}
+      {adminAberto && usuarioLogado.is_admin && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-8">
+            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <UserCog className="w-5 h-5 text-gold-500" />
+                <h3 className="text-lg font-bold text-white">Painel Admin — Controle de Acessos</h3>
+              </div>
+              <button
+                onClick={() => setAdminAberto(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
+              {/* Formulário de Criação de Novo Acesso */}
+              <form
+                onSubmit={handleCriarUsuario}
+                className="bg-navy-950/80 border border-slate-800 rounded-xl p-5 space-y-4"
+              >
+                <h4 className="text-sm font-semibold text-gold-400 flex items-center gap-2">
+                  <UserPlus className="w-4 h-4" /> Criar Novo Login de Acesso
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Login (Usuário) *</label>
+                    <input
+                      type="text"
+                      required
+                      autoCapitalize="none"
+                      value={novoLogin}
+                      onChange={(e) => setNovoLogin(e.target.value)}
+                      placeholder="ex: allhost.goiania"
+                      className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Nome / Operação (Assinatura) *</label>
+                    <input
+                      type="text"
+                      required
+                      value={novoNomeExibicao}
+                      onChange={(e) => setNovoNomeExibicao(e.target.value)}
+                      placeholder="ex: ALL Host"
+                      className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Senha Inicial *</label>
+                    <input
+                      type="text"
+                      required
+                      value={novaSenhaUsuario}
+                      onChange={(e) => setNovaSenhaUsuario(e.target.value)}
+                      placeholder="Defina a senha"
+                      className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={novoIsAdmin}
+                      onChange={(e) => setNovoIsAdmin(e.target.checked)}
+                      className="accent-gold-500"
+                    />
+                    Conceder permissão de Administrador
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={criandoUsuario}
+                    className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-4 py-2 rounded-lg text-xs sm:text-sm transition-all"
+                  >
+                    {criandoUsuario ? 'Criando...' : '+ Criar Acesso'}
+                  </button>
+                </div>
+              </form>
+
+              {/* Lista de Logins Ativos */}
+              <div>
+                <h4 className="text-sm font-semibold text-white mb-3">
+                  Usuários Autorizados ({usuariosLista.length})
+                </h4>
+
+                {carregandoUsuarios ? (
+                  <p className="text-xs text-slate-400">Carregando usuários...</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {usuariosLista.map((user) => (
+                      <div
+                        key={user.id}
+                        className="bg-navy-950 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white text-sm">{user.nome_exibicao}</span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-navy-800 text-slate-300 border border-slate-700">
+                              @{user.login}
+                            </span>
+                            {user.is_admin && (
+                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-gold-500/15 text-gold-400 border border-gold-500/30 font-medium">
+                                <ShieldCheck className="w-3 h-3" /> Admin
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Criado em {formatarData(user.created_at)}
+                          </p>
+                        </div>
+
+                        {editandoSenhaId === user.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              autoFocus
+                              value={senhaAlteradaInput}
+                              onChange={(e) => setSenhaAlteradaInput(e.target.value)}
+                              placeholder="Nova senha..."
+                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-36"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAlterarSenhaUsuario(user.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditandoSenhaId(null);
+                                setSenhaAlteradaInput('');
+                              }}
+                              className="text-slate-400 hover:text-white text-xs px-2 py-1.5"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditandoSenhaId(user.id);
+                                setSenhaAlteradaInput('');
+                              }}
+                              className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <Key className="w-3.5 h-3.5 text-gold-400" />
+                              Trocar Senha
+                            </button>
+
+                            {user.login !== 'admin' && (
+                              <button
+                                type="button"
+                                onClick={() => handleExcluirUsuario(user)}
+                                className="inline-flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs px-3 py-1.5 rounded-lg transition-colors"
+                                title="Revogar e excluir acesso"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Excluir
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE NOVO RELATO */}
       {modalAberto && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-navy-900 border border-gold-500/30 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-8">
@@ -570,7 +925,18 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSalvar} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-              {/* Aviso de Bloqueio Automático (caso algum campo tenha termo restrito) */}
+              {/* Identificação Automática do Autor Logado */}
+              <div className="bg-navy-950/90 border border-gold-500/25 rounded-xl px-4 py-3 flex items-center justify-between gap-2 text-xs">
+                <span className="text-slate-400 flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-gold-500" />
+                  Registro vinculado automaticamente a:
+                </span>
+                <strong className="text-gold-400">
+                  {usuarioLogado.nome_exibicao} ({usuarioLogado.login})
+                </strong>
+              </div>
+
+              {/* Aviso de Bloqueio Automático */}
               {!validacaoGeral.aprovado && (
                 <div className="bg-rose-500/15 border border-rose-500/50 text-rose-200 text-xs px-4 py-3 rounded-xl flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
@@ -694,38 +1060,23 @@ export default function App() {
                 />
               </div>
 
-              {/* Identificação Obrigatória do Anfitrião e Plataforma */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Seu Nome ou Empresa Responsável *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={anfitriaoNome}
-                    onChange={(e) => setAnfitriaoNome(e.target.value)}
-                    placeholder="Digite seu nome ou da empresa"
-                    className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 outline-none text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Canal da Reserva
-                  </label>
-                  <select
-                    value={plataforma}
-                    onChange={(e) => setPlataforma(e.target.value)}
-                    className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
-                  >
-                    <option value="Airbnb">Airbnb</option>
-                    <option value="Booking.com">Booking.com</option>
-                    <option value="Expedia">Expedia</option>
-                    <option value="Reserva Direta">Reserva Direta</option>
-                    <option value="Grupo Anfitriões">Grupo Anfitriões</option>
-                    <option value="Outro">Outro</option>
-                  </select>
-                </div>
+              {/* Canal da Reserva */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Canal da Reserva
+                </label>
+                <select
+                  value={plataforma}
+                  onChange={(e) => setPlataforma(e.target.value)}
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
+                >
+                  <option value="Airbnb">Airbnb</option>
+                  <option value="Booking.com">Booking.com</option>
+                  <option value="Expedia">Expedia</option>
+                  <option value="Reserva Direta">Reserva Direta</option>
+                  <option value="Grupo Anfitriões">Grupo Anfitriões</option>
+                  <option value="Outro">Outro</option>
+                </select>
               </div>
 
               {/* Termo de Responsabilidade */}
@@ -738,7 +1089,7 @@ export default function App() {
                   className="mt-0.5 accent-gold-500"
                 />
                 <span className="text-xs text-slate-300 leading-relaxed">
-                  Declaro que as informações acima são verdadeiras, baseadas em fatos objetivos da hospedagem e que possuo registros/comprovantes do ocorrido, assumindo integral responsabilidade pelo conteúdo publicado.
+                  Declaro que as informações acima são verdadeiras, baseadas em fatos objetivos da hospedagem e que possuo registros/comprovantes do ocorrido, assumindo integral responsabilidade pelo conteúdo publicado sob meu login.
                 </span>
               </label>
 
