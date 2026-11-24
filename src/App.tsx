@@ -20,8 +20,7 @@ import {
   Settings,
   UserCog,
   Key,
-  ShieldCheck,
-  EyeOff
+  ShieldCheck
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede, type UsuarioAcesso } from './lib/supabase';
 import { validarConteudoRelato } from './lib/moderacao';
@@ -59,8 +58,6 @@ export default function App() {
     }
   });
 
-  // Proteção visual contra captura/perda de foco
-  const [telaProtegida, setTelaProtegida] = useState(false);
   const [carimboTempo, setCarimboTempo] = useState(() =>
     new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   );
@@ -126,7 +123,6 @@ export default function App() {
     return validarConteudoRelato(textoCompleto);
   }, [nomeHospede, acompanhanteInput, acompanhantes, relato]);
 
-  // Atualiza carimbo da marca d'água a cada minuto
   useEffect(() => {
     const interval = setInterval(() => {
       setCarimboTempo(new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
@@ -134,7 +130,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Camadas de proteção contra captura, cópia, clique direito e perda de foco
+  // Bloqueio de clique direito e atalhos de cópia/impressão no desktop sem atrapalhar o mobile
   useEffect(() => {
     if (!usuarioLogado) return;
 
@@ -148,14 +144,6 @@ export default function App() {
       const target = e.target as HTMLElement;
       const isField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
 
-      if (e.key === 'PrintScreen') {
-        setTelaProtegida(true);
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText('').catch(() => {});
-        }
-        setTimeout(() => setTelaProtegida(false), 2500);
-      }
-
       if ((e.ctrlKey || e.metaKey) && ['p', 's', 'u'].includes(e.key.toLowerCase())) {
         e.preventDefault();
       }
@@ -165,24 +153,12 @@ export default function App() {
       }
     };
 
-    const handleBlur = () => setTelaProtegida(true);
-    const handleFocus = () => setTelaProtegida(false);
-    const handleVisibilityChange = () => {
-      setTelaProtegida(document.hidden);
-    };
-
     document.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       document.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('blur', handleBlur);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [usuarioLogado]);
 
@@ -325,7 +301,6 @@ export default function App() {
     setBusca('');
     setAdminAberto(false);
     setModalTrocarMinhaSenha(false);
-    setTelaProtegida(false);
   }
 
   async function carregarAvaliacoes() {
@@ -581,7 +556,7 @@ export default function App() {
   if (!usuarioLogado) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-navy-900 border border-gold-500/30 rounded-2xl p-8 shadow-2xl">
+        <div className="max-w-md w-full bg-navy-900 border border-gold-500/30 rounded-2xl p-6 sm:p-8 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 mb-4">
               <KeyRound className="w-7 h-7 text-navy-950" strokeWidth={2.5} />
@@ -661,7 +636,7 @@ export default function App() {
   if (usuarioLogado.primeiro_acesso) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-navy-900 border border-gold-500/40 rounded-2xl p-8 shadow-2xl">
+        <div className="max-w-md w-full bg-navy-900 border border-gold-500/40 rounded-2xl p-6 sm:p-8 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 mb-4">
               <Key className="w-7 h-7 text-navy-950" strokeWidth={2.5} />
@@ -742,62 +717,38 @@ export default function App() {
     );
   }
 
-  const textoMarcaDagua = `${usuarioLogado.nome_exibicao} • @${usuarioLogado.login} • ${carimboTempo}`;
-
   return (
     <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col relative overflow-x-hidden">
-      {/* MARCA D'ÁGUA DINÂMICA DE RASTREABILIDADE (FIXA SOBRE A TELA SEM BLOQUEAR CLIQUES) */}
+      {/* SELO ESTRATÉGICO DISCRETO NO CANTO INFERIOR DIREITO */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-40 overflow-hidden select-none opacity-[0.045]"
+        className="pointer-events-none fixed bottom-3 right-3 z-30 select-none bg-navy-900/80 backdrop-blur-sm border border-gold-500/20 px-2.5 py-1 rounded-lg text-[10px] font-medium tracking-wide text-slate-400/75 shadow-md"
       >
-        <div className="w-[160%] h-[160%] -ml-[30%] -mt-[20%] flex flex-wrap gap-x-16 gap-y-20 -rotate-24 items-center justify-center">
-          {Array.from({ length: 36 }).map((_, idx) => (
-            <span
-              key={idx}
-              className="text-xs sm:text-sm font-bold tracking-widest uppercase text-gold-400 whitespace-nowrap"
-            >
-              {textoMarcaDagua}
-            </span>
-          ))}
-        </div>
+        @{usuarioLogado.login} • {carimboTempo}
       </div>
 
-      {/* PELÍCULA DE DESFOQUE AUTOMÁTICO AO PERDER O FOCO DA JANELA */}
-      {telaProtegida && (
-        <div className="fixed inset-0 z-50 bg-navy-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gold-500/15 border border-gold-500/40 flex items-center justify-center mb-4">
-            <EyeOff className="w-8 h-8 text-gold-400" />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2">Tela Protegida por Sigilo</h3>
-          <p className="text-sm text-slate-400 max-w-md">
-            O conteúdo foi ocultado automaticamente porque a janela perdeu o foco. Clique na página para retomar a consulta.
-          </p>
-        </div>
-      )}
-
-      {/* Navbar Executiva */}
+      {/* Navbar Executiva 100% Responsiva */}
       <header className="sticky top-0 z-30 bg-navy-900/95 backdrop-blur-md border-b border-gold-500/20 shadow-lg">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-md shadow-gold-500/20 shrink-0">
-              <ShieldAlert className="w-6 h-6 text-navy-950" strokeWidth={2.5} />
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-md shadow-gold-500/20 shrink-0">
+              <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6 text-navy-950" strokeWidth={2.5} />
             </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            <div className="truncate">
+              <h1 className="text-base sm:text-2xl font-bold tracking-tight text-white truncate">
                 Rede <span className="text-gold-500">Anfitrião</span>
               </h1>
-              <p className="text-xs text-slate-400 hidden sm:block">
+              <p className="text-xs text-slate-400 hidden sm:block truncate">
                 Conectado como: <strong className="text-gold-400">{usuarioLogado.nome_exibicao}</strong> ({usuarioLogado.login})
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {usuarioLogado.is_admin && (
               <button
                 onClick={abrirPainelAdmin}
-                className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 font-medium px-3 py-2.5 rounded-xl transition-all text-xs sm:text-sm"
+                className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 font-medium p-2 sm:px-3 sm:py-2.5 rounded-xl transition-all text-xs sm:text-sm"
                 title="Gerenciar logins e senhas de acesso"
               >
                 <Settings className="w-4 h-4" />
@@ -813,7 +764,7 @@ export default function App() {
                 setErroMinhaSenha(null);
                 setModalTrocarMinhaSenha(true);
               }}
-              className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 hover:text-white font-medium px-3 py-2.5 rounded-xl transition-all text-xs sm:text-sm"
+              className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 hover:text-white font-medium p-2 sm:px-3 sm:py-2.5 rounded-xl transition-all text-xs sm:text-sm"
               title="Alterar sua senha de acesso"
             >
               <Key className="w-4 h-4 text-gold-400" />
@@ -822,15 +773,16 @@ export default function App() {
 
             <button
               onClick={() => setModalAberto(true)}
-              className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-sm"
+              className="inline-flex items-center gap-1.5 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-2.5 py-2 sm:px-4 sm:py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-xs sm:text-sm whitespace-nowrap"
             >
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2.5} />
-              <span>Registrar Ocorrência</span>
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+              <span className="sm:hidden">Registrar</span>
+              <span className="hidden sm:inline">Registrar Ocorrência</span>
             </button>
 
             <button
               onClick={handleLogout}
-              className="p-2.5 rounded-xl bg-navy-800 hover:bg-navy-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+              className="p-2 sm:p-2.5 rounded-xl bg-navy-800 hover:bg-navy-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
               title="Sair da conta"
             >
               <LogOut className="w-4 h-4" />
@@ -841,7 +793,7 @@ export default function App() {
 
       {/* Banner de Feedback */}
       {mensagemBanner && (
-        <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 mt-4">
+        <div className="max-w-5xl mx-auto w-full px-3 sm:px-6 mt-4">
           <div className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-4 py-3 rounded-xl flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <span className="text-sm font-medium">{mensagemBanner}</span>
@@ -850,33 +802,33 @@ export default function App() {
       )}
 
       {/* Hero & Barra de Pesquisa Principal */}
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8">
-        <div className="bg-gradient-to-br from-navy-900 to-navy-800 border border-gold-500/20 rounded-2xl p-6 sm:p-8 shadow-2xl mb-8">
+      <main className="flex-1 max-w-5xl mx-auto w-full px-3 sm:px-6 py-6 sm:py-8">
+        <div className="bg-gradient-to-br from-navy-900 to-navy-800 border border-gold-500/20 rounded-2xl p-5 sm:p-8 shadow-2xl mb-6 sm:mb-8">
           <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gold-400 bg-gold-500/10 border border-gold-500/25 px-3 py-1 rounded-full mb-3">
+            <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-gold-400 bg-gold-500/10 border border-gold-500/25 px-3 py-1 rounded-full mb-3">
               <AlertTriangle className="w-3.5 h-3.5" /> Consulta Preventiva Interna
             </span>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+            <h2 className="text-xl sm:text-3xl font-bold text-white mb-2">
               Pesquise pelo nome do hóspede ou acompanhante
             </h2>
-            <p className="text-slate-300 text-sm sm:text-base mb-6">
+            <p className="text-slate-300 text-xs sm:text-base mb-5 sm:mb-6">
               Verifique registros operacionais anteriores relatados por anfitriões parceiros antes de confirmar uma estadia.
             </p>
           </div>
 
           <div className="relative">
-            <Search className="w-5 h-5 text-gold-500 absolute left-4 top-1/2 -translate-y-1/2" />
+            <Search className="w-5 h-5 text-gold-500 absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Digite o nome completo ou sobrenome (busca também em acompanhantes)..."
-              className="w-full bg-navy-950/90 border border-slate-700 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20 rounded-xl pl-12 pr-12 py-4 text-white placeholder-slate-400 text-base outline-none transition-all"
+              placeholder="Nome completo ou sobrenome..."
+              className="w-full bg-navy-950/90 border border-slate-700 focus:border-gold-500 focus:ring-2 focus:ring-gold-500/20 rounded-xl pl-11 sm:pl-12 pr-10 sm:pr-12 py-3.5 sm:py-4 text-white placeholder-slate-400 text-sm sm:text-base outline-none transition-all"
             />
             {busca && (
               <button
                 onClick={() => setBusca('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                className="absolute right-3.5 sm:right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                 title="Limpar pesquisa"
               >
                 <X className="w-5 h-5" />
@@ -889,7 +841,7 @@ export default function App() {
               Exibindo <strong className="text-gold-400">{avaliacoesFiltradas.length}</strong>{' '}
               {avaliacoesFiltradas.length === 1 ? 'registro encontrado' : 'registros encontrados'}
             </span>
-            <span>Sessão rastreada: @{usuarioLogado.login}</span>
+            <span>Busca em titulares e acompanhantes</span>
           </div>
         </div>
 
@@ -900,7 +852,7 @@ export default function App() {
             <p className="text-slate-400">Carregando base de ocorrências...</p>
           </div>
         ) : avaliacoesFiltradas.length === 0 ? (
-          <div className="bg-navy-900/60 border border-slate-800 rounded-2xl p-12 text-center">
+          <div className="bg-navy-900/60 border border-slate-800 rounded-2xl p-8 sm:p-12 text-center">
             <UserCheck className="w-12 h-12 text-slate-600 mx-auto mb-3" />
             <h3 className="text-lg font-semibold text-white mb-1">
               {busca ? 'Nenhum registro encontrado para este nome' : 'Nenhuma ocorrência cadastrada ainda'}
@@ -922,7 +874,7 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             {avaliacoesFiltradas.map((item) => {
               const termoBusca = busca.trim().toLowerCase();
               const encontradoViaAcompanhante =
@@ -933,30 +885,32 @@ export default function App() {
               return (
                 <article
                   key={item.id}
-                  className="bg-navy-900 border border-slate-800 hover:border-gold-500/35 rounded-2xl p-6 transition-all shadow-lg"
+                  className="bg-navy-900 border border-slate-800 hover:border-gold-500/35 rounded-2xl p-4 sm:p-6 transition-all shadow-lg"
                 >
                   {/* Cabeçalho do Card */}
-                  <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800/80">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <h3 className="text-xl font-bold text-white">{item.nome_hospede}</h3>
+                  <div className="flex items-start justify-between gap-3 pb-3 sm:pb-4 border-b border-slate-800/80">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg sm:text-xl font-bold text-white break-words">
+                          {item.nome_hospede}
+                        </h3>
                         <span className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-navy-800 text-gold-400 border border-gold-500/20">
                           {item.plataforma}
                         </span>
                         {encontradoViaAcompanhante && (
                           <span className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            Encontrado na lista de acompanhantes
+                            Encontrado nos acompanhantes
                           </span>
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-slate-400">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2 text-xs text-slate-400">
                         <span className="inline-flex items-center gap-1.5">
-                          <Building2 className="w-3.5 h-3.5 text-gold-500" />
+                          <Building2 className="w-3.5 h-3.5 text-gold-500 shrink-0" />
                           Registrado por: <strong className="text-slate-300">{item.anfitriao_nome}</strong>
                         </span>
                         <span className="inline-flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-gold-500" />
+                          <Calendar className="w-3.5 h-3.5 text-gold-500 shrink-0" />
                           {formatarData(item.created_at)}
                         </span>
                       </div>
@@ -973,11 +927,11 @@ export default function App() {
 
                   {/* Tags Rápidas */}
                   {item.tags && item.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-4">
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-3.5 sm:mt-4">
                       {item.tags.map((tag, idx) => (
                         <span
                           key={idx}
-                          className={'text-xs font-medium px-3 py-1 rounded-full border ' + getTagStyle(tag)}
+                          className={'text-[11px] sm:text-xs font-medium px-2.5 sm:px-3 py-1 rounded-full border ' + getTagStyle(tag)}
                         >
                           {tag}
                         </span>
@@ -986,15 +940,15 @@ export default function App() {
                   )}
 
                   {/* Relato da Experiência */}
-                  <div className="mt-4 bg-navy-950/60 border border-slate-800/80 rounded-xl p-4">
-                    <p className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-line">
+                  <div className="mt-3.5 sm:mt-4 bg-navy-950/60 border border-slate-800/80 rounded-xl p-3.5 sm:p-4">
+                    <p className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-line break-words">
                       {item.relato}
                     </p>
                   </div>
 
                   {/* Lista de Acompanhantes */}
                   {item.acompanhantes && item.acompanhantes.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-slate-800/60 flex flex-wrap items-center gap-2">
+                    <div className="mt-3.5 sm:mt-4 pt-3 border-t border-slate-800/60 flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 mr-1">
                         <Users className="w-4 h-4 text-gold-500" />
                         Acompanhantes ({item.acompanhantes.length}):
@@ -1026,23 +980,23 @@ export default function App() {
       </main>
 
       {/* Rodapé de Governança e Responsabilidade */}
-      <footer className="border-t border-slate-800/80 bg-navy-900/50 py-5 px-4 sm:px-6 mt-12">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+      <footer className="border-t border-slate-800/80 bg-navy-900/50 py-5 px-4 sm:px-6 mt-12 pb-12 sm:pb-5">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400 text-center sm:text-left">
           <div className="flex items-center gap-2">
-            <Scale className="w-4 h-4 text-gold-500 shrink-0" />
+            <Scale className="w-4 h-4 text-gold-500 shrink-0 hidden sm:block" />
             <span>
               Base privada de uso interno. Cada anfitrião identificado responde integralmente pela veracidade e comprovação dos fatos relatados.
             </span>
           </div>
-          <span className="text-slate-500 shrink-0">Uso confidencial • Capturas rastreadas por usuário</span>
+          <span className="text-slate-500 shrink-0">Uso confidencial • Sessão rastreada</span>
         </div>
       </footer>
 
       {/* MODAL TROCAR MINHA SENHA */}
       {modalTrocarMinhaSenha && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5 text-gold-500" />
                 <h3 className="text-base font-bold text-white">Alterar Minha Senha</h3>
@@ -1055,7 +1009,7 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={handleTrocarMinhaSenha} className="p-6 space-y-4">
+            <form onSubmit={handleTrocarMinhaSenha} className="p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
                   Senha Atual *
@@ -1116,7 +1070,7 @@ export default function App() {
                 </p>
               )}
 
-              <div className="pt-2 flex items-center justify-end gap-3">
+              <div className="pt-2 flex items-center justify-end gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setModalTrocarMinhaSenha(false)}
@@ -1127,7 +1081,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={salvandoMinhaSenha}
-                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
+                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-4 sm:px-5 py-2 rounded-xl text-sm transition-colors"
                 >
                   {salvandoMinhaSenha ? 'Salvando...' : 'Atualizar Senha'}
                 </button>
@@ -1139,12 +1093,12 @@ export default function App() {
 
       {/* MODAL PAINEL ADMIN */}
       {adminAberto && usuarioLogado.is_admin && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-8">
-            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <UserCog className="w-5 h-5 text-gold-500" />
-                <h3 className="text-lg font-bold text-white">Painel Admin — Controle de Acessos</h3>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-auto">
+            <div className="px-4 sm:px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserCog className="w-5 h-5 text-gold-500 shrink-0" />
+                <h3 className="text-base sm:text-lg font-bold text-white">Painel Admin — Acessos</h3>
               </div>
               <button
                 onClick={() => setAdminAberto(false)}
@@ -1154,10 +1108,10 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-6 max-h-[82vh] overflow-y-auto">
               <form
                 onSubmit={handleCriarUsuario}
-                className="bg-navy-950/80 border border-slate-800 rounded-xl p-5 space-y-4"
+                className="bg-navy-950/80 border border-slate-800 rounded-xl p-4 sm:p-5 space-y-4"
               >
                 <h4 className="text-sm font-semibold text-gold-400 flex items-center gap-2">
                   <UserPlus className="w-4 h-4" /> Criar Novo Login de Acesso
@@ -1177,7 +1131,7 @@ export default function App() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Nome / Operação (Assinatura) *</label>
+                    <label className="block text-xs text-slate-400 mb-1">Nome / Operação *</label>
                     <input
                       type="text"
                       required
@@ -1194,7 +1148,7 @@ export default function App() {
                       required
                       value={novaSenhaUsuario}
                       onChange={(e) => setNovaSenhaUsuario(e.target.value)}
-                      placeholder="Defina a senha inicial"
+                      placeholder="Senha inicial"
                       className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
                     />
                   </div>
@@ -1208,7 +1162,7 @@ export default function App() {
                       onChange={(e) => setNovoIsAdmin(e.target.checked)}
                       className="accent-gold-500"
                     />
-                    Conceder permissão de Administrador
+                    Permissão de Administrador
                   </label>
 
                   <button
@@ -1233,7 +1187,7 @@ export default function App() {
                     {usuariosLista.map((user) => (
                       <div
                         key={user.id}
-                        className="bg-navy-950 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        className="bg-navy-950 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                       >
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1258,14 +1212,14 @@ export default function App() {
                         </div>
 
                         {editandoSenhaId === user.id ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <input
                               type="text"
                               autoFocus
                               value={senhaAlteradaInput}
                               onChange={(e) => setSenhaAlteradaInput(e.target.value)}
-                              placeholder="Nova senha provisória..."
-                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-40"
+                              placeholder="Nova senha..."
+                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-36"
                             />
                             <button
                               type="button"
@@ -1322,36 +1276,36 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL DE NOVO RELATO */}
+      {/* MODAL DE NOVO RELATO — RESPONSIVO PARA MOBILE */}
       {modalAberto && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-navy-900 border border-gold-500/30 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-8">
-            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <FileText className="w-5 h-5 text-gold-500" />
-                <h3 className="text-lg font-bold text-white">Registrar Ocorrência de Hóspede</h3>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-navy-900 border-t sm:border border-gold-500/30 rounded-t-2xl sm:rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-gold-500 shrink-0" />
+                <h3 className="text-base sm:text-lg font-bold text-white">Registrar Ocorrência</h3>
               </div>
               <button
                 onClick={() => setModalAberto(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSalvar} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-              <div className="bg-navy-950/90 border border-gold-500/25 rounded-xl px-4 py-3 flex items-center justify-between gap-2 text-xs">
-                <span className="text-slate-400 flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-gold-500" />
-                  Registro vinculado automaticamente a:
+            <form onSubmit={handleSalvar} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1">
+              <div className="bg-navy-950/90 border border-gold-500/25 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-1 text-xs">
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-gold-500 shrink-0" />
+                  Autor do registro:
                 </span>
-                <strong className="text-gold-400">
+                <strong className="text-gold-400 truncate">
                   {usuarioLogado.nome_exibicao} ({usuarioLogado.login})
                 </strong>
               </div>
 
               {!validacaoGeral.aprovado && (
-                <div className="bg-rose-500/15 border border-rose-500/50 text-rose-200 text-xs px-4 py-3 rounded-xl flex items-start gap-2.5">
+                <div className="bg-rose-500/15 border border-rose-500/50 text-rose-200 text-xs px-3.5 py-3 rounded-xl flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="block text-rose-300 mb-0.5">Publicação bloqueada automaticamente:</strong>
@@ -1361,7 +1315,7 @@ export default function App() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-slate-200 mb-1.5">
+                <label className="block text-xs sm:text-sm font-medium text-slate-200 mb-1.5">
                   Nome Completo do Hóspede Titular *
                 </label>
                 <input
@@ -1370,15 +1324,15 @@ export default function App() {
                   value={nomeHospede}
                   onChange={(e) => setNomeHospede(e.target.value)}
                   placeholder="Ex.: João Carlos da Silva"
-                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none"
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-sm sm:text-base text-white placeholder-slate-500 outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-200 mb-1.5">
+                <label className="block text-xs sm:text-sm font-medium text-slate-200 mb-1.5">
                   Acompanhantes (Opcional)
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     value={acompanhanteInput}
@@ -1389,13 +1343,13 @@ export default function App() {
                         adicionarAcompanhante();
                       }
                     }}
-                    placeholder="Nome completo do acompanhante..."
-                    className="flex-1 bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 outline-none text-sm"
+                    placeholder="Nome do acompanhante..."
+                    className="flex-1 bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 outline-none text-sm"
                   />
                   <button
                     type="button"
                     onClick={adicionarAcompanhante}
-                    className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors shrink-0"
                   >
                     <UserPlus className="w-4 h-4" />
                     Adicionar
@@ -1403,7 +1357,7 @@ export default function App() {
                 </div>
 
                 {acompanhantes.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
+                  <div className="flex flex-wrap gap-2 mt-2.5">
                     {acompanhantes.map((acomp, index) => (
                       <span
                         key={index}
@@ -1424,10 +1378,10 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-200 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-slate-200 mb-2">
                   Tags de Ocorrência (Selecione o que aconteceu)
                 </label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                   {TAGS_DISPONIVEIS.map((tag) => {
                     const ativa = tagsSelecionadas.includes(tag.label);
                     return (
@@ -1436,7 +1390,7 @@ export default function App() {
                         key={tag.label}
                         onClick={() => toggleTag(tag.label)}
                         className={
-                          'text-xs px-3 py-1.5 rounded-full border transition-all ' +
+                          'text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border transition-all text-left ' +
                           (ativa
                             ? 'bg-rose-500 text-white border-rose-500 font-semibold shadow-sm'
                             : 'bg-navy-950 text-slate-300 border-slate-700 hover:border-slate-500')
@@ -1451,7 +1405,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-200 mb-1.5">
+                <label className="block text-xs sm:text-sm font-medium text-slate-200 mb-1.5">
                   Relato Objetivo da Ocorrência *
                 </label>
                 <textarea
@@ -1459,9 +1413,9 @@ export default function App() {
                   rows={4}
                   value={relato}
                   onChange={(e) => setRelato(e.target.value)}
-                  placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia (ex.: atraso no checkout, danos materiais, excesso de visitantes)..."
+                  placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia..."
                   className={
-                    'w-full bg-navy-950 border rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm ' +
+                    'w-full bg-navy-950 border rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-white placeholder-slate-500 outline-none text-sm ' +
                     (!validacaoGeral.aprovado
                       ? 'border-rose-500 focus:border-rose-500'
                       : 'border-slate-700 focus:border-gold-500')
@@ -1487,31 +1441,31 @@ export default function App() {
                 </select>
               </div>
 
-              <label className="flex items-start gap-2.5 bg-navy-950/80 border border-slate-800 rounded-xl p-3.5 cursor-pointer">
+              <label className="flex items-start gap-2.5 bg-navy-950/80 border border-slate-800 rounded-xl p-3 sm:p-3.5 cursor-pointer">
                 <input
                   type="checkbox"
                   required
                   checked={aceiteResponsabilidade}
                   onChange={(e) => setAceiteResponsabilidade(e.target.checked)}
-                  className="mt-0.5 accent-gold-500"
+                  className="mt-0.5 accent-gold-500 shrink-0"
                 />
-                <span className="text-xs text-slate-300 leading-relaxed">
+                <span className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
                   Declaro que as informações acima são verdadeiras, baseadas em fatos objetivos da hospedagem e que possuo registros/comprovantes do ocorrido, assumindo integral responsabilidade pelo conteúdo publicado sob meu login.
                 </span>
               </label>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+              <div className="pt-3 border-t border-slate-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setModalAberto(false)}
-                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:bg-navy-800 transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:bg-navy-800 transition-colors text-center"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={enviando || !aceiteResponsabilidade || !validacaoGeral.aprovado}
-                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
+                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15 text-center"
                 >
                   {enviando ? 'Salvando...' : 'Publicar Ocorrência'}
                 </button>
@@ -1523,9 +1477,9 @@ export default function App() {
 
       {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO COM SENHA */}
       {registroParaExcluir && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="bg-navy-900 border border-rose-500/40 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
               <div className="flex items-center gap-2 text-rose-400">
                 <Lock className="w-5 h-5" />
                 <h3 className="text-base font-bold text-white">Excluir Ocorrência</h3>
@@ -1538,7 +1492,7 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={confirmarExclusao} className="p-6 space-y-4">
+            <form onSubmit={confirmarExclusao} className="p-4 sm:p-6 space-y-4">
               <p className="text-sm text-slate-300">
                 Você está prestes a remover permanentemente o registro de{' '}
                 <strong className="text-white">{registroParaExcluir.nome_hospede}</strong>.
@@ -1567,7 +1521,7 @@ export default function App() {
                 )}
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-3">
+              <div className="pt-2 flex items-center justify-end gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setRegistroParaExcluir(null)}
@@ -1578,7 +1532,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={excluindo}
-                  className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
+                  className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold px-4 sm:px-5 py-2 rounded-xl text-sm transition-colors"
                 >
                   {excluindo ? 'Excluindo...' : 'Confirmar Exclusão'}
                 </button>
