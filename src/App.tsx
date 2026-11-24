@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Plus, 
@@ -556,7 +556,7 @@ export default function App() {
                     type="text"
                     value={anfitriaoNome}
                     onChange={(e) => setAnfitriaoNome(e.target.value)}
-                    placeholder="Ex.: Anthony - ALL Host"
+                    placeholder="Digite seu nome ou da empresa"
                     className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 outline-none text-sm"
                   />
                 </div>
