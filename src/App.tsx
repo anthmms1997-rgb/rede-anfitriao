@@ -47,6 +47,7 @@ const TAGS_DISPONIVEIS: TagOption[] = [
 
 const SENHA_EXCLUSAO = '15975300';
 const STORAGE_USER_KEY = 'rede_anfitriao_user_v2';
+const STORAGE_TERMS_KEY = 'rede_anfitriao_termos_aceitos_v1';
 
 export default function App() {
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioAcesso | null>(() => {
@@ -55,6 +56,14 @@ export default function App() {
       return salvo ? JSON.parse(salvo) : null;
     } catch {
       return null;
+    }
+  });
+
+  const [termosAceitos, setTermosAceitos] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(STORAGE_TERMS_KEY) === 'true';
+    } catch {
+      return false;
     }
   });
 
@@ -130,7 +139,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Bloqueio de clique direito e atalhos de cópia/impressão no desktop sem atrapalhar o mobile
+  // Bloqueio de clique direito e atalhos de cópia/impressão no desktop
   useEffect(() => {
     if (!usuarioLogado) return;
 
@@ -163,10 +172,10 @@ export default function App() {
   }, [usuarioLogado]);
 
   useEffect(() => {
-    if (usuarioLogado && !usuarioLogado.primeiro_acesso) {
+    if (usuarioLogado && !usuarioLogado.primeiro_acesso && termosAceitos) {
       carregarAvaliacoes();
     }
-  }, [usuarioLogado]);
+  }, [usuarioLogado, termosAceitos]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -195,9 +204,16 @@ export default function App() {
     }
 
     sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(data));
+    sessionStorage.removeItem(STORAGE_TERMS_KEY);
+    setTermosAceitos(false);
     setUsuarioLogado(data);
     setLoginInput('');
     setSenhaLogin('');
+  }
+
+  function handleAceitarTermosIniciais() {
+    sessionStorage.setItem(STORAGE_TERMS_KEY, 'true');
+    setTermosAceitos(true);
   }
 
   async function handleSalvarPrimeiroAcesso(e: React.FormEvent) {
@@ -240,7 +256,7 @@ export default function App() {
     setUsuarioLogado(usuarioAtualizado);
     setNovaSenhaPrimeiroAcesso('');
     setConfirmaSenhaPrimeiroAcesso('');
-    mostrarAviso('Senha pessoal definida com sucesso! Bem-vindo à Rede Anfitrião.');
+    mostrarAviso('Senha pessoal definida com sucesso!');
   }
 
   async function handleTrocarMinhaSenha(e: React.FormEvent) {
@@ -296,7 +312,9 @@ export default function App() {
 
   function handleLogout() {
     sessionStorage.removeItem(STORAGE_USER_KEY);
+    sessionStorage.removeItem(STORAGE_TERMS_KEY);
     setUsuarioLogado(null);
+    setTermosAceitos(false);
     setAvaliacoes([]);
     setBusca('');
     setAdminAberto(false);
@@ -717,6 +735,93 @@ export default function App() {
     );
   }
 
+  // 3. TELA INSTITUCIONAL DE DIRETRIZES DE USO, SIGILO E COMPLIANCE (OBRIGATÓRIA AO ENTRAR)
+  if (!termosAceitos) {
+    return (
+      <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6">
+        <div className="max-w-2xl w-full bg-navy-900 border border-gold-500/35 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="px-5 sm:px-8 py-5 bg-navy-800 border-b border-gold-500/20 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shrink-0 shadow-md">
+              <Scale className="w-6 h-6 text-navy-950" strokeWidth={2.5} />
+            </div>
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-gold-400 font-semibold block">
+                Governança e Compliance • Leitura Obrigatória
+              </span>
+              <h2 className="text-lg sm:text-xl font-bold text-white">
+                Diretrizes de Uso, Sigilo e Responsabilidade
+              </h2>
+            </div>
+          </div>
+
+          <div className="p-5 sm:p-8 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed max-h-[68vh] overflow-y-auto">
+            <p className="text-slate-200">
+              Bem-vindo(a), <strong className="text-gold-400">{usuarioLogado.nome_exibicao}</strong>. A{' '}
+              <strong className="text-white">Rede Anfitrião</strong> é um ambiente privado de apoio operacional destinado exclusivamente à prevenção de danos materiais e gestão de riscos entre anfitriões autorizados. Para prosseguir, observe integralmente as seguintes diretrizes:
+            </p>
+
+            <div className="bg-navy-950/90 border border-slate-800 rounded-xl p-4 space-y-3.5">
+              <div>
+                <h3 className="text-gold-400 font-semibold text-xs sm:text-sm mb-1">
+                  1. Objetividade e Comprovação Documental
+                </h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  Registre exclusivamente fatos objetivos, verificáveis e relacionados à estadia (como danos ao imóvel, descumprimento de regras internas, atraso injustificado de check-out ou divergência de ocupantes). Nunca publique suposições, juízos de valor, ofensas pessoais ou relatos sem lastro probatório (fotos, mensagens na plataforma ou registros formais).
+                </p>
+              </div>
+
+              <div className="border-t border-slate-800/80 pt-3">
+                <h3 className="text-gold-400 font-semibold text-xs sm:text-sm mb-1">
+                  2. Proteção de Dados e Vedação de Conteúdo Sensível (LGPD)
+                </h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  É estritamente proibido inserir números de CPF, documentos pessoais, telefones, endereços residenciais, acusações criminais sem sentença ou informações sobre saúde, vida íntima e características pessoais. Todo registro fica permanentemente vinculado ao login do respectivo autor, que responde civil e criminalmente pela veracidade das informações inseridas.
+                </p>
+              </div>
+
+              <div className="border-t border-slate-800/80 pt-3">
+                <h3 className="text-gold-400 font-semibold text-xs sm:text-sm mb-1">
+                  3. Confidencialidade Absoluta e Proibição de Compartilhamento Externo
+                </h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  As informações consultadas nesta plataforma são de uso estritamente interno e confidencial. É expressamente vedado capturar telas, extrair dados, mencionar a existência deste sistema ou encaminhar qualquer informação a hóspedes, intermediários ou terceiros não autorizados. O descumprimento acarretará a revogação imediata do acesso e responsabilização por eventuais prejuízos decorrentes do vazamento.
+                </p>
+              </div>
+
+              <div className="border-t border-slate-800/80 pt-3">
+                <h3 className="text-gold-400 font-semibold text-xs sm:text-sm mb-1">
+                  4. Moderação e Remoção Administrativa
+                </h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  A administração reserva-se o direito de editar, ocultar ou excluir imediatamente qualquer publicação que fuja aos padrões de objetividade, apresente risco jurídico ou careça de comprovação adequada.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 sm:px-8 py-4 bg-navy-800/80 border-t border-slate-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm text-slate-400 hover:text-white hover:bg-navy-800 transition-colors text-center"
+            >
+              Sair da Conta
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAceitarTermosIniciais}
+              className="inline-flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-6 py-3 rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-gold-500/15"
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              Li, compreendi e concordo com as diretrizes
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col relative overflow-x-hidden">
       {/* SELO ESTRATÉGICO DISCRETO NO CANTO INFERIOR DIREITO */}
@@ -887,7 +992,6 @@ export default function App() {
                   key={item.id}
                   className="bg-navy-900 border border-slate-800 hover:border-gold-500/35 rounded-2xl p-4 sm:p-6 transition-all shadow-lg"
                 >
-                  {/* Cabeçalho do Card */}
                   <div className="flex items-start justify-between gap-3 pb-3 sm:pb-4 border-b border-slate-800/80">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -925,7 +1029,6 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Tags Rápidas */}
                   {item.tags && item.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 sm:gap-2 mt-3.5 sm:mt-4">
                       {item.tags.map((tag, idx) => (
@@ -939,14 +1042,12 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Relato da Experiência */}
                   <div className="mt-3.5 sm:mt-4 bg-navy-950/60 border border-slate-800/80 rounded-xl p-3.5 sm:p-4">
                     <p className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-line break-words">
                       {item.relato}
                     </p>
                   </div>
 
-                  {/* Lista de Acompanhantes */}
                   {item.acompanhantes && item.acompanhantes.length > 0 && (
                     <div className="mt-3.5 sm:mt-4 pt-3 border-t border-slate-800/60 flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 mr-1">
