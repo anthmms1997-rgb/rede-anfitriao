@@ -363,27 +363,29 @@ export default function App() {
     e.preventDefault();
     if (!novoLogin.trim() || !novaSenhaUsuario.trim()) return;
 
+    if (novaSenhaUsuario.trim().length < 6) {
+      alert('A senha provisória deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
     const loginNormalizado = novoLogin.trim().toLowerCase().replace(/\s+/g, '.');
     const nomeFinal = novoNomeExibicao.trim() || novoLogin.trim();
 
     setCriandoUsuario(true);
-    const { error } = await supabase.from('usuarios_acesso').insert([
-      {
-        login: loginNormalizado,
-        senha: novaSenhaUsuario.trim(),
-        nome_exibicao: nomeFinal,
-        is_admin: novoIsAdmin,
-        primeiro_acesso: true,
-        termos_aceitos: false,
-      },
-    ]);
+    const { data: criado, error } = await supabase.rpc('criar_usuario_seguro', {
+      p_login: loginNormalizado,
+      p_senha: novaSenhaUsuario.trim(),
+      p_nome_exibicao: nomeFinal,
+      p_is_admin: novoIsAdmin,
+    });
     setCriandoUsuario(false);
 
-    if (error) {
-      if (error.code === '23505') {
+    if (error || !criado) {
+      const msg = error?.message || 'Erro ao criar acesso.';
+      if (msg.includes('Já existe um usuário') || error?.code === '23505') {
         alert('Já existe um usuário cadastrado com este login.');
       } else {
-        alert('Erro ao criar acesso: ' + error.message);
+        alert('Erro ao criar acesso: ' + msg);
       }
       return;
     }
@@ -1662,6 +1664,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 
