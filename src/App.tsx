@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Plus, 
@@ -74,7 +74,12 @@ export default function App() {
   const [anfitriaoNome, setAnfitriaoNome] = useState('');
   const [plataforma, setPlataforma] = useState('Airbnb');
   const [aceiteResponsabilidade, setAceiteResponsabilidade] = useState(false);
-  const validacaoRelato = useMemo(() => validarConteudoRelato(relato), [relato]);
+
+  // Validação em tempo real de todos os campos de texto
+  const validacaoGeral = useMemo(() => {
+    const textoCompleto = [nomeHospede, acompanhanteInput, ...acompanhantes, relato, anfitriaoNome].join(' ');
+    return validarConteudoRelato(textoCompleto);
+  }, [nomeHospede, acompanhanteInput, acompanhantes, relato, anfitriaoNome]);
 
   useEffect(() => {
     if (autenticado) {
@@ -155,11 +160,20 @@ export default function App() {
 
   async function handleSalvar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade || !validacaoRelato.aprovado) return;
+    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade) return;
 
     const listaFinalAcompanhantes = [...acompanhantes];
     if (acompanhanteInput.trim() && !listaFinalAcompanhantes.includes(acompanhanteInput.trim())) {
       listaFinalAcompanhantes.push(acompanhanteInput.trim());
+    }
+
+    // Dupla checagem antes de enviar ao Supabase
+    const checkFinal = validarConteudoRelato(
+      [nomeHospede, ...listaFinalAcompanhantes, relato, anfitriaoNome].join(' ')
+    );
+    if (!checkFinal.aprovado) {
+      alert(checkFinal.motivo);
+      return;
     }
 
     setEnviando(true);
@@ -187,7 +201,7 @@ export default function App() {
       mostrarAviso('Ocorrência registrada com sucesso na Rede Anfitrião!');
       carregarAvaliacoes();
     } else {
-      alert('Erro ao salvar relato: ' + error.message);
+      alert('Publicação bloqueada: ' + error.message);
     }
   }
 
@@ -240,7 +254,7 @@ export default function App() {
     });
   }
 
-  // TELA DE BLOQUEIO PRIVADA (ACESSO RESTRITO A ANFITRIÕES AUTORIZADOS)
+  // TELA DE BLOQUEIO PRIVADA
   if (!autenticado) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
@@ -556,6 +570,17 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSalvar} className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
+              {/* Aviso de Bloqueio Automático (caso algum campo tenha termo restrito) */}
+              {!validacaoGeral.aprovado && (
+                <div className="bg-rose-500/15 border border-rose-500/50 text-rose-200 text-xs px-4 py-3 rounded-xl flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block text-rose-300 mb-0.5">Publicação bloqueada automaticamente:</strong>
+                    <span>{validacaoGeral.motivo}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Nome Completo do Hóspede */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
@@ -660,18 +685,13 @@ export default function App() {
                   value={relato}
                   onChange={(e) => setRelato(e.target.value)}
                   placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia (ex.: atraso no checkout, danos materiais, excesso de visitantes)..."
-                  className={`w-full bg-navy-950 border rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm ${
-                    !validacaoRelato.aprovado
+                  className={
+                    'w-full bg-navy-950 border rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm ' +
+                    (!validacaoGeral.aprovado
                       ? 'border-rose-500 focus:border-rose-500'
-                      : 'border-slate-700 focus:border-gold-500'
-                  }`}
+                      : 'border-slate-700 focus:border-gold-500')
+                  }
                 />
-                {!validacaoRelato.aprovado && (
-                  <div className="mt-2 bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs px-3.5 py-2.5 rounded-xl flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                    <span>{validacaoRelato.motivo}</span>
-                  </div>
-                )}
               </div>
 
               {/* Identificação Obrigatória do Anfitrião e Plataforma */}
@@ -733,8 +753,8 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  disabled={enviando || !aceiteResponsabilidade || !validacaoRelato.aprovado}
-                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
+                  disabled={enviando || !aceiteResponsabilidade || !validacaoGeral.aprovado}
+                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-40 disabled:cursor-not-allowed text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
                 >
                   {enviando ? 'Salvando...' : 'Publicar Ocorrência'}
                 </button>
