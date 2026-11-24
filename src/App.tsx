@@ -64,6 +64,20 @@ export default function App() {
   const [erroLogin, setErroLogin] = useState<string | null>(null);
   const [autenticando, setAutenticando] = useState(false);
 
+  // Estados de Redefinição no Primeiro Acesso
+  const [novaSenhaPrimeiroAcesso, setNovaSenhaPrimeiroAcesso] = useState('');
+  const [confirmaSenhaPrimeiroAcesso, setConfirmaSenhaPrimeiroAcesso] = useState('');
+  const [erroPrimeiroAcesso, setErroPrimeiroAcesso] = useState<string | null>(null);
+  const [salvandoPrimeiroAcesso, setSalvandoPrimeiroAcesso] = useState(false);
+
+  // Estados do Modal "Trocar Minha Senha" (para qualquer usuário logado)
+  const [modalTrocarMinhaSenha, setModalTrocarMinhaSenha] = useState(false);
+  const [senhaAtualInput, setSenhaAtualInput] = useState('');
+  const [minhaNovaSenha, setMinhaNovaSenha] = useState('');
+  const [confirmaMinhaNovaSenha, setConfirmaMinhaNovaSenha] = useState('');
+  const [erroMinhaSenha, setErroMinhaSenha] = useState<string | null>(null);
+  const [salvandoMinhaSenha, setSalvandoMinhaSenha] = useState(false);
+
   // Estados da Base de Ocorrências
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoHospede[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,7 +120,7 @@ export default function App() {
   }, [nomeHospede, acompanhanteInput, acompanhantes, relato]);
 
   useEffect(() => {
-    if (usuarioLogado) {
+    if (usuarioLogado && !usuarioLogado.primeiro_acesso) {
       carregarAvaliacoes();
     }
   }, [usuarioLogado]);
@@ -120,7 +134,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin')
+      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso')
       .eq('login', loginInput.trim().toLowerCase())
       .eq('senha', senhaLogin)
       .maybeSingle();
@@ -143,12 +157,108 @@ export default function App() {
     setSenhaLogin('');
   }
 
+  async function handleSalvarPrimeiroAcesso(e: React.FormEvent) {
+    e.preventDefault();
+    if (!usuarioLogado) return;
+
+    if (novaSenhaPrimeiroAcesso.trim().length < 6) {
+      setErroPrimeiroAcesso('A nova senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (novaSenhaPrimeiroAcesso !== confirmaSenhaPrimeiroAcesso) {
+      setErroPrimeiroAcesso('As senhas digitadas não coincidem.');
+      return;
+    }
+
+    setSalvandoPrimeiroAcesso(true);
+    setErroPrimeiroAcesso(null);
+
+    const { error } = await supabase
+      .from('usuarios_acesso')
+      .update({
+        senha: novaSenhaPrimeiroAcesso.trim(),
+        primeiro_acesso: false,
+      })
+      .eq('id', usuarioLogado.id);
+
+    setSalvandoPrimeiroAcesso(false);
+
+    if (error) {
+      setErroPrimeiroAcesso('Erro ao redefinir senha: ' + error.message);
+      return;
+    }
+
+    const usuarioAtualizado: UsuarioAcesso = {
+      ...usuarioLogado,
+      primeiro_acesso: false,
+    };
+
+    sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuarioAtualizado));
+    setUsuarioLogado(usuarioAtualizado);
+    setNovaSenhaPrimeiroAcesso('');
+    setConfirmaSenhaPrimeiroAcesso('');
+    mostrarAviso('Senha pessoal definida com sucesso! Bem-vindo à Rede Anfitrião.');
+  }
+
+  async function handleTrocarMinhaSenha(e: React.FormEvent) {
+    e.preventDefault();
+    if (!usuarioLogado) return;
+
+    if (minhaNovaSenha.trim().length < 6) {
+      setErroMinhaSenha('A nova senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (minhaNovaSenha !== confirmaMinhaNovaSenha) {
+      setErroMinhaSenha('A confirmação da nova senha não coincide.');
+      return;
+    }
+
+    setSalvandoMinhaSenha(true);
+    setErroMinhaSenha(null);
+
+    // Confere a senha atual antes de atualizar
+    const { data: verificado } = await supabase
+      .from('usuarios_acesso')
+      .select('id')
+      .eq('id', usuarioLogado.id)
+      .eq('senha', senhaAtualInput)
+      .maybeSingle();
+
+    if (!verificado) {
+      setSalvandoMinhaSenha(false);
+      setErroMinhaSenha('A senha atual informada está incorreta.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('usuarios_acesso')
+      .update({
+        senha: minhaNovaSenha.trim(),
+        primeiro_acesso: false,
+      })
+      .eq('id', usuarioLogado.id);
+
+    setSalvandoMinhaSenha(false);
+
+    if (error) {
+      setErroMinhaSenha('Erro ao atualizar senha: ' + error.message);
+      return;
+    }
+
+    setModalTrocarMinhaSenha(false);
+    setSenhaAtualInput('');
+    setMinhaNovaSenha('');
+    setConfirmaMinhaNovaSenha('');
+    mostrarAviso('Sua senha foi alterada com sucesso!');
+  }
+
   function handleLogout() {
     sessionStorage.removeItem(STORAGE_USER_KEY);
     setUsuarioLogado(null);
     setAvaliacoes([]);
     setBusca('');
     setAdminAberto(false);
+    setModalTrocarMinhaSenha(false);
   }
 
   async function carregarAvaliacoes() {
@@ -168,7 +278,7 @@ export default function App() {
     setCarregandoUsuarios(true);
     const { data, error } = await supabase
       .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin')
+      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso')
       .order('created_at', { ascending: true });
 
     if (!error && data) {
@@ -196,6 +306,7 @@ export default function App() {
         senha: novaSenhaUsuario.trim(),
         nome_exibicao: nomeFinal,
         is_admin: novoIsAdmin,
+        primeiro_acesso: true,
       },
     ]);
     setCriandoUsuario(false);
@@ -213,7 +324,7 @@ export default function App() {
     setNovoNomeExibicao('');
     setNovaSenhaUsuario('');
     setNovoIsAdmin(false);
-    mostrarAviso(`Acesso "${loginNormalizado}" criado com sucesso!`);
+    mostrarAviso(`Acesso "${loginNormalizado}" criado! O usuário redefinirá a senha no 1º acesso.`);
     carregarUsuarios();
   }
 
@@ -222,13 +333,17 @@ export default function App() {
 
     const { error } = await supabase
       .from('usuarios_acesso')
-      .update({ senha: senhaAlteradaInput.trim() })
+      .update({
+        senha: senhaAlteradaInput.trim(),
+        primeiro_acesso: true,
+      })
       .eq('id', id);
 
     if (!error) {
       setEditandoSenhaId(null);
       setSenhaAlteradaInput('');
-      mostrarAviso('Senha atualizada com sucesso!');
+      mostrarAviso('Senha provisória atualizada! O usuário definirá uma nova senha ao entrar.');
+      carregarUsuarios();
     } else {
       alert('Erro ao atualizar senha: ' + error.message);
     }
@@ -258,7 +373,7 @@ export default function App() {
 
   function mostrarAviso(texto: string) {
     setMensagemBanner(texto);
-    setTimeout(() => setMensagemBanner(null), 4000);
+    setTimeout(() => setMensagemBanner(null), 4500);
   }
 
   const avaliacoesFiltradas = useMemo(() => {
@@ -312,7 +427,6 @@ export default function App() {
       return;
     }
 
-    // Identificação automática vinculada ao login conectado
     const autorAutomatico =
       usuarioLogado.nome_exibicao.toLowerCase() !== usuarioLogado.login.toLowerCase()
         ? `${usuarioLogado.nome_exibicao} (${usuarioLogado.login})`
@@ -396,7 +510,7 @@ export default function App() {
     });
   }
 
-  // TELA DE LOGIN INDIVIDUAL (USUÁRIO + SENHA)
+  // 1. TELA DE LOGIN INDIVIDUAL (USUÁRIO + SENHA)
   if (!usuarioLogado) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
@@ -476,6 +590,91 @@ export default function App() {
     );
   }
 
+  // 2. TELA OBRIGATÓRIA DE REDEFINIÇÃO DE SENHA NO PRIMEIRO ACESSO
+  if (usuarioLogado.primeiro_acesso) {
+    return (
+      <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-navy-900 border border-gold-500/40 rounded-2xl p-8 shadow-2xl">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 mb-4">
+              <Key className="w-7 h-7 text-navy-950" strokeWidth={2.5} />
+            </div>
+            <span className="text-xs uppercase tracking-wider text-gold-400 font-semibold">
+              Primeiro Acesso • Segurança da Conta
+            </span>
+            <h2 className="text-xl font-bold text-white mt-1">
+              Olá, {usuarioLogado.nome_exibicao}!
+            </h2>
+            <p className="text-sm text-slate-300 mt-2">
+              Por segurança, defina uma senha pessoal e intransferível para substituir a senha provisória antes de acessar o sistema.
+            </p>
+          </div>
+
+          <form onSubmit={handleSalvarPrimeiroAcesso} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Nova Senha Pessoal (mínimo 6 caracteres) *
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                minLength={6}
+                value={novaSenhaPrimeiroAcesso}
+                onChange={(e) => {
+                  setNovaSenhaPrimeiroAcesso(e.target.value);
+                  setErroPrimeiroAcesso(null);
+                }}
+                placeholder="Digite sua nova senha..."
+                className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Confirmar Nova Senha *
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={confirmaSenhaPrimeiroAcesso}
+                onChange={(e) => {
+                  setConfirmaSenhaPrimeiroAcesso(e.target.value);
+                  setErroPrimeiroAcesso(null);
+                }}
+                placeholder="Repita a nova senha..."
+                className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white outline-none"
+              />
+            </div>
+
+            {erroPrimeiroAcesso && (
+              <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                {erroPrimeiroAcesso}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={salvandoPrimeiroAcesso}
+              className="w-full bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-gold-500/15"
+            >
+              {salvandoPrimeiroAcesso ? 'Salvando senha...' : 'Salvar Senha e Acessar'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full text-xs text-slate-400 hover:text-white py-2 transition-colors"
+            >
+              Cancelar e voltar ao login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col">
       {/* Navbar Executiva */}
@@ -506,6 +705,21 @@ export default function App() {
                 <span className="hidden md:inline">Painel Admin</span>
               </button>
             )}
+
+            <button
+              onClick={() => {
+                setSenhaAtualInput('');
+                setMinhaNovaSenha('');
+                setConfirmaMinhaNovaSenha('');
+                setErroMinhaSenha(null);
+                setModalTrocarMinhaSenha(true);
+              }}
+              className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 hover:text-white font-medium px-3 py-2.5 rounded-xl transition-all text-xs sm:text-sm"
+              title="Alterar sua senha de acesso"
+            >
+              <Key className="w-4 h-4 text-gold-400" />
+              <span className="hidden lg:inline">Trocar Senha</span>
+            </button>
 
             <button
               onClick={() => setModalAberto(true)}
@@ -725,6 +939,105 @@ export default function App() {
         </div>
       </footer>
 
+      {/* MODAL TROCAR MINHA SENHA (PARA QUALQUER USUÁRIO LOGADO) */}
+      {modalTrocarMinhaSenha && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-gold-500" />
+                <h3 className="text-base font-bold text-white">Alterar Minha Senha</h3>
+              </div>
+              <button
+                onClick={() => setModalTrocarMinhaSenha(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleTrocarMinhaSenha} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Senha Atual *
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={senhaAtualInput}
+                  onChange={(e) => {
+                    setSenhaAtualInput(e.target.value);
+                    setErroMinhaSenha(null);
+                  }}
+                  placeholder="Digite sua senha atual..."
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-2.5 text-white outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Nova Senha (mínimo 6 caracteres) *
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={minhaNovaSenha}
+                  onChange={(e) => {
+                    setMinhaNovaSenha(e.target.value);
+                    setErroMinhaSenha(null);
+                  }}
+                  placeholder="Digite a nova senha..."
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-2.5 text-white outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Confirmar Nova Senha *
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={confirmaMinhaNovaSenha}
+                  onChange={(e) => {
+                    setConfirmaMinhaNovaSenha(e.target.value);
+                    setErroMinhaSenha(null);
+                  }}
+                  placeholder="Repita a nova senha..."
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-2.5 text-white outline-none text-sm"
+                />
+              </div>
+
+              {erroMinhaSenha && (
+                <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                  {erroMinhaSenha}
+                </p>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setModalTrocarMinhaSenha(false)}
+                  className="px-4 py-2 rounded-xl text-sm text-slate-300 hover:bg-navy-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvandoMinhaSenha}
+                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
+                >
+                  {salvandoMinhaSenha ? 'Salvando...' : 'Atualizar Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL PAINEL ADMIN (GERENCIAMENTO DE LOGINS E SENHAS) */}
       {adminAberto && usuarioLogado.is_admin && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -777,13 +1090,13 @@ export default function App() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Senha Inicial *</label>
+                    <label className="block text-xs text-slate-400 mb-1">Senha Provisória *</label>
                     <input
                       type="text"
                       required
                       value={novaSenhaUsuario}
                       onChange={(e) => setNovaSenhaUsuario(e.target.value)}
-                      placeholder="Defina a senha"
+                      placeholder="Defina a senha inicial"
                       className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
                     />
                   </div>
@@ -826,7 +1139,7 @@ export default function App() {
                         className="bg-navy-950 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                       >
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-bold text-white text-sm">{user.nome_exibicao}</span>
                             <span className="text-xs px-2 py-0.5 rounded bg-navy-800 text-slate-300 border border-slate-700">
                               @{user.login}
@@ -834,6 +1147,11 @@ export default function App() {
                             {user.is_admin && (
                               <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-gold-500/15 text-gold-400 border border-gold-500/30 font-medium">
                                 <ShieldCheck className="w-3 h-3" /> Admin
+                              </span>
+                            )}
+                            {user.primeiro_acesso && (
+                              <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                Aguardando 1º acesso
                               </span>
                             )}
                           </div>
@@ -849,8 +1167,8 @@ export default function App() {
                               autoFocus
                               value={senhaAlteradaInput}
                               onChange={(e) => setSenhaAlteradaInput(e.target.value)}
-                              placeholder="Nova senha..."
-                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-36"
+                              placeholder="Nova senha provisória..."
+                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-40"
                             />
                             <button
                               type="button"
@@ -881,7 +1199,7 @@ export default function App() {
                               className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg transition-colors"
                             >
                               <Key className="w-3.5 h-3.5 text-gold-400" />
-                              Trocar Senha
+                              Resetar Senha
                             </button>
 
                             {user.login !== 'admin' && (

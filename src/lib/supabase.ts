@@ -27,4 +27,5 @@ export interface UsuarioAcesso {
   senha?: string;
   nome_exibicao: string;
   is_admin: boolean;
+  primeiro_acesso: boolean;
 }
