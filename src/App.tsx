@@ -245,18 +245,16 @@ export default function App() {
     setSalvandoPrimeiroAcesso(true);
     setErroPrimeiroAcesso(null);
 
-    const { error } = await supabase
-      .from('usuarios_acesso')
-      .update({
-        senha: novaSenhaPrimeiroAcesso.trim(),
-        primeiro_acesso: false,
-      })
-      .eq('id', usuarioLogado.id);
+    const { data: atualizado, error } = await supabase.rpc('atualizar_senha_usuario', {
+      p_id: usuarioLogado.id,
+      p_nova_senha: novaSenhaPrimeiroAcesso.trim(),
+      p_primeiro_acesso: false,
+    });
 
     setSalvandoPrimeiroAcesso(false);
 
-    if (error) {
-      setErroPrimeiroAcesso('Erro ao redefinir senha: ' + error.message);
+    if (error || !atualizado) {
+      setErroPrimeiroAcesso('Erro ao redefinir senha: ' + (error?.message || 'falha na atualização'));
       return;
     }
 
@@ -301,18 +299,16 @@ export default function App() {
       return;
     }
 
-    const { error } = await supabase
-      .from('usuarios_acesso')
-      .update({
-        senha: minhaNovaSenha.trim(),
-        primeiro_acesso: false,
-      })
-      .eq('id', usuarioLogado.id);
+    const { data: atualizado, error } = await supabase.rpc('atualizar_senha_usuario', {
+      p_id: usuarioLogado.id,
+      p_nova_senha: minhaNovaSenha.trim(),
+      p_primeiro_acesso: false,
+    });
 
     setSalvandoMinhaSenha(false);
 
-    if (error) {
-      setErroMinhaSenha('Erro ao atualizar senha: ' + error.message);
+    if (error || !atualizado) {
+      setErroMinhaSenha('Erro ao atualizar senha: ' + (error?.message || 'falha na atualização'));
       return;
     }
 
@@ -403,21 +399,24 @@ export default function App() {
   async function handleAlterarSenhaUsuario(id: string) {
     if (!senhaAlteradaInput.trim()) return;
 
-    const { error } = await supabase
-      .from('usuarios_acesso')
-      .update({
-        senha: senhaAlteradaInput.trim(),
-        primeiro_acesso: true,
-      })
-      .eq('id', id);
+    if (senhaAlteradaInput.trim().length < 6) {
+      alert('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
 
-    if (!error) {
+    const { data: atualizado, error } = await supabase.rpc('atualizar_senha_usuario', {
+      p_id: id,
+      p_nova_senha: senhaAlteradaInput.trim(),
+      p_primeiro_acesso: true,
+    });
+
+    if (!error && atualizado) {
       setEditandoSenhaId(null);
       setSenhaAlteradaInput('');
       mostrarAviso('Senha provisória atualizada! O usuário definirá uma nova senha ao entrar.');
       carregarUsuarios();
     } else {
-      alert('Erro ao atualizar senha: ' + error.message);
+      alert('Erro ao atualizar senha: ' + (error?.message || 'verifique se a senha tem ao menos 6 caracteres'));
     }
   }
 
@@ -1663,5 +1662,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
