@@ -45,7 +45,6 @@ const TAGS_DISPONIVEIS: TagOption[] = [
   { label: 'Não recomendado', type: 'danger' },
 ];
 
-const SENHA_EXCLUSAO = '15975300';
 const STORAGE_USER_KEY = 'rede_anfitriao_user_v3';
 
 export default function App() {
@@ -544,27 +543,27 @@ export default function App() {
     e.preventDefault();
     if (!registroParaExcluir) return;
 
-    if (senhaDigitada !== SENHA_EXCLUSAO) {
+    setExcluindo(true);
+    const { data, error } = await supabase.rpc('excluir_ocorrencia_segura', {
+      p_id: registroParaExcluir.id,
+      p_senha: senhaDigitada,
+    });
+    setExcluindo(false);
+
+    if (error) {
+      alert('Erro ao validar exclusão: ' + error.message);
+      return;
+    }
+
+    if (!data) {
       setErroSenha(true);
       return;
     }
 
-    setExcluindo(true);
-    const { error } = await supabase
-      .from('avaliacoes_hospedes')
-      .delete()
-      .eq('id', registroParaExcluir.id);
-
-    setExcluindo(false);
-
-    if (!error) {
-      setRegistroParaExcluir(null);
-      setSenhaDigitada('');
-      mostrarAviso('Registro excluído com sucesso.');
-      carregarAvaliacoes();
-    } else {
-      alert('Erro ao excluir registro: ' + error.message);
-    }
+    setRegistroParaExcluir(null);
+    setSenhaDigitada('');
+    mostrarAviso('Registro excluído com sucesso.');
+    carregarAvaliacoes();
   }
 
   function getTagStyle(tagLabel: string) {
@@ -1664,3 +1663,4 @@ export default function App() {
     </div>
   );
 }
+
