@@ -3,36 +3,41 @@ import {
   Search, 
   Plus, 
   Users, 
-  ShieldCheck, 
+  ShieldAlert, 
   UserPlus, 
   X, 
   Calendar, 
   Building2, 
   CheckCircle2,
-  Sparkles,
+  AlertTriangle,
   FileText,
-  UserCheck
+  UserCheck,
+  Trash2,
+  Lock
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede } from './lib/supabase';
 
 interface TagOption {
   label: string;
-  type: 'positive' | 'warning' | 'danger';
+  type: 'warning' | 'danger';
 }
 
 const TAGS_DISPONIVEIS: TagOption[] = [
-  { label: 'Imóvel entregue limpo', type: 'positive' },
-  { label: 'Excelente comunicação', type: 'positive' },
-  { label: 'Respeitou regras do condomínio', type: 'positive' },
-  { label: 'Pontual no check-in/out', type: 'positive' },
-  { label: 'Recomendado', type: 'positive' },
-  { label: 'Atraso no check-out', type: 'warning' },
-  { label: 'Hóspede não informado', type: 'warning' },
-  { label: 'Barulho / Reclamação vizinhos', type: 'danger' },
+  { label: 'Imóvel muito sujo / lixo', type: 'danger' },
   { label: 'Danos ao imóvel / enxoval', type: 'danger' },
   { label: 'Fumou no apartamento', type: 'danger' },
+  { label: 'Hóspede não informado', type: 'warning' },
+  { label: 'Festa / Barulho / Vizinhos', type: 'danger' },
+  { label: 'Furto / Itens ausentes', type: 'danger' },
+  { label: 'Atraso no check-out / Não sai', type: 'warning' },
+  { label: 'Pet não autorizado', type: 'warning' },
+  { label: 'Golpe / Estelionato / Doc. falso', type: 'danger' },
+  { label: 'Avaliação falsa / Má-fé', type: 'warning' },
+  { label: 'Desrespeito / Ameaças', type: 'danger' },
   { label: 'Não recomendado', type: 'danger' },
 ];
+
+const SENHA_EXCLUSAO = '15975300';
 
 export default function App() {
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoHospede[]>([]);
@@ -40,7 +45,13 @@ export default function App() {
   const [busca, setBusca] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [mensagemSucesso, setMensagemSucesso] = useState(false);
+  const [mensagemBanner, setMensagemBanner] = useState<string | null>(null);
+
+  // Estados do modal de exclusão
+  const [registroParaExcluir, setRegistroParaExcluir] = useState<AvaliacaoHospede | null>(null);
+  const [senhaDigitada, setSenhaDigitada] = useState('');
+  const [erroSenha, setErroSenha] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   // Estados do formulário
   const [nomeHospede, setNomeHospede] = useState('');
@@ -66,6 +77,11 @@ export default function App() {
       setAvaliacoes(data);
     }
     setLoading(false);
+  }
+
+  function mostrarAviso(texto: string) {
+    setMensagemBanner(texto);
+    setTimeout(() => setMensagemBanner(null), 4000);
   }
 
   // Busca inteligente: procura no nome do titular OU no nome de qualquer acompanhante
@@ -133,20 +149,49 @@ export default function App() {
       setTagsSelecionadas([]);
       setRelato('');
       setModalAberto(false);
-      setMensagemSucesso(true);
-      setTimeout(() => setMensagemSucesso(false), 4000);
+      mostrarAviso('Ocorrência registrada com sucesso na Rede Anfitrião!');
       carregarAvaliacoes();
     } else {
       alert('Erro ao salvar relato: ' + error.message);
     }
   }
 
+  function abrirModalExclusao(item: AvaliacaoHospede) {
+    setRegistroParaExcluir(item);
+    setSenhaDigitada('');
+    setErroSenha(false);
+  }
+
+  async function confirmarExclusao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!registroParaExcluir) return;
+
+    if (senhaDigitada !== SENHA_EXCLUSAO) {
+      setErroSenha(true);
+      return;
+    }
+
+    setExcluindo(true);
+    const { error } = await supabase
+      .from('avaliacoes_hospedes')
+      .delete()
+      .eq('id', registroParaExcluir.id);
+
+    setExcluindo(false);
+
+    if (!error) {
+      setRegistroParaExcluir(null);
+      setSenhaDigitada('');
+      mostrarAviso('Registro excluído com sucesso.');
+      carregarAvaliacoes();
+    } else {
+      alert('Erro ao excluir registro: ' + error.message);
+    }
+  }
+
   function getTagStyle(tagLabel: string) {
     const found = TAGS_DISPONIVEIS.find((t) => t.label === tagLabel);
-    if (!found || found.type === 'positive') {
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    }
-    if (found.type === 'warning') {
+    if (found && found.type === 'warning') {
       return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
     }
     return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
@@ -167,14 +212,14 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-md shadow-gold-500/20">
-              <ShieldCheck className="w-6 h-6 text-navy-950" strokeWidth={2.5} />
+              <ShieldAlert className="w-6 h-6 text-navy-950" strokeWidth={2.5} />
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
                 Rede <span className="text-gold-500">Anfitrião</span>
               </h1>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Base colaborativa de experiências e histórico de hóspedes
+                Base colaborativa de alertas e ocorrências com hóspedes
               </p>
             </div>
           </div>
@@ -184,19 +229,17 @@ export default function App() {
             className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-sm sm:text-base"
           >
             <Plus className="w-5 h-5" strokeWidth={2.5} />
-            <span>Registrar Relato</span>
+            <span>Registrar Ocorrência</span>
           </button>
         </div>
       </header>
 
-      {/* Banner de Sucesso */}
-      {mensagemSucesso && (
+      {/* Banner de Feedback */}
+      {mensagemBanner && (
         <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 mt-4">
           <div className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-4 py-3 rounded-xl flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span className="text-sm font-medium">
-              Experiência registrada com sucesso na Rede Anfitrião!
-            </span>
+            <span className="text-sm font-medium">{mensagemBanner}</span>
           </div>
         </div>
       )}
@@ -206,13 +249,13 @@ export default function App() {
         <div className="bg-gradient-to-br from-navy-900 to-navy-800 border border-gold-500/20 rounded-2xl p-6 sm:p-8 shadow-2xl mb-8">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gold-400 bg-gold-500/10 border border-gold-500/25 px-3 py-1 rounded-full mb-3">
-              <Sparkles className="w-3.5 h-3.5" /> Consulta Rápida de Histórico
+              <AlertTriangle className="w-3.5 h-3.5" /> Consulta Preventiva de Hóspedes
             </span>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
               Pesquise pelo nome do hóspede ou acompanhante
             </h2>
             <p className="text-slate-300 text-sm sm:text-base mb-6">
-              Consulte relatos reais de outros anfitriões antes de confirmar uma reserva ou liberar o check-in.
+              Verifique se há relatos negativos ou ocorrências registradas por outros anfitriões antes de liberar a reserva.
             </p>
           </div>
 
@@ -249,18 +292,18 @@ export default function App() {
         {loading ? (
           <div className="text-center py-16">
             <div className="w-10 h-10 border-4 border-gold-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-400">Carregando base de experiências...</p>
+            <p className="text-slate-400">Carregando base de ocorrências...</p>
           </div>
         ) : avaliacoesFiltradas.length === 0 ? (
           <div className="bg-navy-900/60 border border-slate-800 rounded-2xl p-12 text-center">
             <UserCheck className="w-12 h-12 text-slate-600 mx-auto mb-3" />
             <h3 className="text-lg font-semibold text-white mb-1">
-              {busca ? 'Nenhum registro encontrado para este nome' : 'Nenhum relato cadastrado ainda'}
+              {busca ? 'Nenhum registro encontrado para este nome' : 'Nenhuma ocorrência cadastrada ainda'}
             </h3>
             <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
               {busca
-                ? 'Não encontramos ocorrências para "' + busca + '" nem como titular nem como acompanhante.'
-                : 'Seja o primeiro a compartilhar uma experiência com um hóspede para ajudar outros anfitriões.'}
+                ? 'Não encontramos ocorrências negativas para "' + busca + '" nem como titular nem como acompanhante.'
+                : 'Seja o primeiro a registrar um alerta para ajudar outros anfitriões.'}
             </p>
             <button
               onClick={() => {
@@ -270,7 +313,7 @@ export default function App() {
               className="inline-flex items-center gap-2 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 px-5 py-2.5 rounded-xl text-sm font-medium transition-all"
             >
               <Plus className="w-4 h-4" />
-              Cadastrar relato {busca ? 'para "' + busca + '"' : 'agora'}
+              Cadastrar ocorrência {busca ? 'para "' + busca + '"' : 'agora'}
             </button>
           </div>
         ) : (
@@ -288,7 +331,7 @@ export default function App() {
                   className="bg-navy-900 border border-slate-800 hover:border-gold-500/35 rounded-2xl p-6 transition-all shadow-lg"
                 >
                   {/* Cabeçalho do Card */}
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-800/80">
+                  <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800/80">
                     <div>
                       <div className="flex flex-wrap items-center gap-2.5">
                         <h3 className="text-xl font-bold text-white">{item.nome_hospede}</h3>
@@ -313,6 +356,14 @@ export default function App() {
                         </span>
                       </div>
                     </div>
+
+                    <button
+                      onClick={() => abrirModalExclusao(item)}
+                      className="text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-lg transition-colors shrink-0"
+                      title="Excluir relato (requer senha)"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
 
                   {/* Tags Rápidas */}
@@ -376,7 +427,7 @@ export default function App() {
             <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <FileText className="w-5 h-5 text-gold-500" />
-                <h3 className="text-lg font-bold text-white">Novo Relato de Experiência</h3>
+                <h3 className="text-lg font-bold text-white">Registrar Ocorrência de Hóspede</h3>
               </div>
               <button
                 onClick={() => setModalAberto(false)}
@@ -455,7 +506,7 @@ export default function App() {
               {/* Tags Rápidas */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-2">
-                  Tags Rápidas (Selecione o que se aplica)
+                  Tags de Ocorrência (Selecione o que aconteceu)
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {TAGS_DISPONIVEIS.map((tag) => {
@@ -468,7 +519,7 @@ export default function App() {
                         className={
                           'text-xs px-3 py-1.5 rounded-full border transition-all ' +
                           (ativa
-                            ? 'bg-gold-500 text-navy-950 border-gold-500 font-semibold shadow-sm'
+                            ? 'bg-rose-500 text-white border-rose-500 font-semibold shadow-sm'
                             : 'bg-navy-950 text-slate-300 border-slate-700 hover:border-slate-500')
                         }
                       >
@@ -483,14 +534,14 @@ export default function App() {
               {/* Relato da Experiência */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Relato da Experiência *
+                  Relato Detalhado do Problema *
                 </label>
                 <textarea
                   required
                   rows={4}
                   value={relato}
                   onChange={(e) => setRelato(e.target.value)}
-                  placeholder="Descreva como foi a estadia, comunicação, cuidados com o apartamento, cumprimento das regras..."
+                  placeholder="Descreva o ocorrido (sujeira, danos, hóspedes extras, desrespeito às regras do condomínio, etc.)..."
                   className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm"
                 />
               </div>
@@ -522,6 +573,7 @@ export default function App() {
                     <option value="Booking.com">Booking.com</option>
                     <option value="Expedia">Expedia</option>
                     <option value="Reserva Direta">Reserva Direta</option>
+                    <option value="Grupo Anfitriões">Grupo Anfitriões</option>
                     <option value="Outro">Outro</option>
                   </select>
                 </div>
@@ -541,7 +593,74 @@ export default function App() {
                   disabled={enviando}
                   className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
                 >
-                  {enviando ? 'Salvando...' : 'Publicar Relato'}
+                  {enviando ? 'Salvando...' : 'Publicar Ocorrência'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão com Senha */}
+      {registroParaExcluir && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-navy-900 border border-rose-500/40 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Lock className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Excluir Ocorrência</h3>
+              </div>
+              <button
+                onClick={() => setRegistroParaExcluir(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={confirmarExclusao} className="p-6 space-y-4">
+              <p className="text-sm text-slate-300">
+                Você está prestes a remover permanentemente o registro de{' '}
+                <strong className="text-white">{registroParaExcluir.nome_hospede}</strong>.
+              </p>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  Digite a senha de administrador para confirmar:
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  value={senhaDigitada}
+                  onChange={(e) => {
+                    setSenhaDigitada(e.target.value);
+                    setErroSenha(false);
+                  }}
+                  placeholder="••••••••"
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-rose-500 rounded-xl px-4 py-2.5 text-white outline-none"
+                />
+                {erroSenha && (
+                  <p className="text-xs text-rose-400 mt-1.5">
+                    Senha incorreta. Exclusão não autorizada.
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRegistroParaExcluir(null)}
+                  className="px-4 py-2 rounded-xl text-sm text-slate-300 hover:bg-navy-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={excluindo}
+                  className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors"
+                >
+                  {excluindo ? 'Excluindo...' : 'Confirmar Exclusão'}
                 </button>
               </div>
             </form>
