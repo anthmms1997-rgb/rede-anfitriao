@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Plus, 
@@ -19,6 +19,7 @@ import {
   Scale
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede } from './lib/supabase';
+import { validarConteudoRelato } from './lib/moderacao';
 
 interface TagOption {
   label: string;
@@ -73,6 +74,7 @@ export default function App() {
   const [anfitriaoNome, setAnfitriaoNome] = useState('');
   const [plataforma, setPlataforma] = useState('Airbnb');
   const [aceiteResponsabilidade, setAceiteResponsabilidade] = useState(false);
+  const validacaoRelato = useMemo(() => validarConteudoRelato(relato), [relato]);
 
   useEffect(() => {
     if (autenticado) {
@@ -153,7 +155,7 @@ export default function App() {
 
   async function handleSalvar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade) return;
+    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade || !validacaoRelato.aprovado) return;
 
     const listaFinalAcompanhantes = [...acompanhantes];
     if (acompanhanteInput.trim() && !listaFinalAcompanhantes.includes(acompanhanteInput.trim())) {
@@ -657,9 +659,19 @@ export default function App() {
                   rows={4}
                   value={relato}
                   onChange={(e) => setRelato(e.target.value)}
-                  placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia (evite inserir documentos como CPF ou dados sensíveis)..."
-                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm"
+                  placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia (ex.: atraso no checkout, danos materiais, excesso de visitantes)..."
+                  className={`w-full bg-navy-950 border rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm ${
+                    !validacaoRelato.aprovado
+                      ? 'border-rose-500 focus:border-rose-500'
+                      : 'border-slate-700 focus:border-gold-500'
+                  }`}
                 />
+                {!validacaoRelato.aprovado && (
+                  <div className="mt-2 bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs px-3.5 py-2.5 rounded-xl flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{validacaoRelato.motivo}</span>
+                  </div>
+                )}
               </div>
 
               {/* Identificação Obrigatória do Anfitrião e Plataforma */}
@@ -721,7 +733,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  disabled={enviando || !aceiteResponsabilidade}
+                  disabled={enviando || !aceiteResponsabilidade || !validacaoRelato.aprovado}
                   className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
                 >
                   {enviando ? 'Salvando...' : 'Publicar Ocorrência'}
