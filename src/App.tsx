@@ -176,12 +176,10 @@ export default function App() {
     setAutenticando(true);
     setErroLogin(null);
 
-    const { data, error } = await supabase
-      .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso, termos_aceitos')
-      .eq('login', loginInput.trim().toLowerCase())
-      .eq('senha', senhaLogin)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('autenticar_usuario', {
+      p_login: loginInput.trim().toLowerCase(),
+      p_senha: senhaLogin,
+    });
 
     setAutenticando(false);
 
@@ -190,13 +188,15 @@ export default function App() {
       return;
     }
 
-    if (!data) {
+    const usuarioAutenticado = Array.isArray(data) ? data[0] : data;
+
+    if (!usuarioAutenticado) {
       setErroLogin('Login ou senha inválidos.');
       return;
     }
 
-    sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(data));
-    setUsuarioLogado(data);
+    sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuarioAutenticado));
+    setUsuarioLogado(usuarioAutenticado);
     setLoginInput('');
     setSenhaLogin('');
   }
@@ -1663,4 +1663,5 @@ export default function App() {
     </div>
   );
 }
+
 
