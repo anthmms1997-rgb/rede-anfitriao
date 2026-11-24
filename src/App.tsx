@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Plus, 
@@ -13,7 +13,10 @@ import {
   FileText,
   UserCheck,
   Trash2,
-  Lock
+  Lock,
+  LogOut,
+  KeyRound,
+  Scale
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede } from './lib/supabase';
 
@@ -31,15 +34,23 @@ const TAGS_DISPONIVEIS: TagOption[] = [
   { label: 'Furto / Itens ausentes', type: 'danger' },
   { label: 'Atraso no check-out / Não sai', type: 'warning' },
   { label: 'Pet não autorizado', type: 'warning' },
-  { label: 'Golpe / Estelionato / Doc. falso', type: 'danger' },
-  { label: 'Avaliação falsa / Má-fé', type: 'warning' },
+  { label: 'Divergência cadastral / Pagamento', type: 'danger' },
+  { label: 'Avaliação contestada / Má-fé', type: 'warning' },
   { label: 'Desrespeito / Ameaças', type: 'danger' },
   { label: 'Não recomendado', type: 'danger' },
 ];
 
+const SENHA_ACESSO = '15975300';
 const SENHA_EXCLUSAO = '15975300';
+const STORAGE_AUTH_KEY = 'rede_anfitriao_auth_v1';
 
 export default function App() {
+  const [autenticado, setAutenticado] = useState<boolean>(() => {
+    return sessionStorage.getItem(STORAGE_AUTH_KEY) === 'true';
+  });
+  const [senhaLogin, setSenhaLogin] = useState('');
+  const [erroLogin, setErroLogin] = useState(false);
+
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoHospede[]>([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
@@ -61,10 +72,32 @@ export default function App() {
   const [relato, setRelato] = useState('');
   const [anfitriaoNome, setAnfitriaoNome] = useState('');
   const [plataforma, setPlataforma] = useState('Airbnb');
+  const [aceiteResponsabilidade, setAceiteResponsabilidade] = useState(false);
 
   useEffect(() => {
-    carregarAvaliacoes();
-  }, []);
+    if (autenticado) {
+      carregarAvaliacoes();
+    }
+  }, [autenticado]);
+
+  function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (senhaLogin === SENHA_ACESSO) {
+      sessionStorage.setItem(STORAGE_AUTH_KEY, 'true');
+      setAutenticado(true);
+      setErroLogin(false);
+      setSenhaLogin('');
+    } else {
+      setErroLogin(true);
+    }
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(STORAGE_AUTH_KEY);
+    setAutenticado(false);
+    setAvaliacoes([]);
+    setBusca('');
+  }
 
   async function carregarAvaliacoes() {
     setLoading(true);
@@ -84,7 +117,6 @@ export default function App() {
     setTimeout(() => setMensagemBanner(null), 4000);
   }
 
-  // Busca inteligente: procura no nome do titular OU no nome de qualquer acompanhante
   const avaliacoesFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     if (!termo) return avaliacoes;
@@ -121,7 +153,7 @@ export default function App() {
 
   async function handleSalvar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomeHospede.trim() || !relato.trim()) return;
+    if (!nomeHospede.trim() || !relato.trim() || !anfitriaoNome.trim() || !aceiteResponsabilidade) return;
 
     const listaFinalAcompanhantes = [...acompanhantes];
     if (acompanhanteInput.trim() && !listaFinalAcompanhantes.includes(acompanhanteInput.trim())) {
@@ -135,7 +167,7 @@ export default function App() {
         acompanhantes: listaFinalAcompanhantes,
         tags: tagsSelecionadas,
         relato: relato.trim(),
-        anfitriao_nome: anfitriaoNome.trim() || 'Anfitrião Parceiro',
+        anfitriao_nome: anfitriaoNome.trim(),
         plataforma,
       },
     ]);
@@ -148,6 +180,7 @@ export default function App() {
       setAcompanhanteInput('');
       setTagsSelecionadas([]);
       setRelato('');
+      setAceiteResponsabilidade(false);
       setModalAberto(false);
       mostrarAviso('Ocorrência registrada com sucesso na Rede Anfitrião!');
       carregarAvaliacoes();
@@ -205,13 +238,73 @@ export default function App() {
     });
   }
 
+  // TELA DE BLOQUEIO PRIVADA (ACESSO RESTRITO A ANFITRIÕES AUTORIZADOS)
+  if (!autenticado) {
+    return (
+      <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-navy-900 border border-gold-500/30 rounded-2xl p-8 shadow-2xl">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-lg shadow-gold-500/20 mb-4">
+              <KeyRound className="w-7 h-7 text-navy-950" strokeWidth={2.5} />
+            </div>
+            <h1 className="text-2xl font-bold text-white">
+              Rede <span className="text-gold-500">Anfitrião</span>
+            </h1>
+            <p className="text-xs uppercase tracking-wider text-gold-400 font-semibold mt-1">
+              Ambiente Privado • Acesso Restrito
+            </p>
+            <p className="text-sm text-slate-400 mt-3">
+              Ferramenta interna exclusiva para anfitriões parceiros autorizados. Insira a chave de acesso para continuar.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Chave de Acesso
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                value={senhaLogin}
+                onChange={(e) => {
+                  setSenhaLogin(e.target.value);
+                  setErroLogin(false);
+                }}
+                placeholder="Digite a senha de acesso..."
+                className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white outline-none"
+              />
+              {erroLogin && (
+                <p className="text-xs text-rose-400 mt-1.5">
+                  Chave de acesso inválida. Verifique com a administração.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-gold-500/15"
+            >
+              Entrar no Sistema
+            </button>
+          </form>
+
+          <p className="text-[11px] text-slate-500 text-center mt-6 leading-relaxed">
+            Uso restrito à gestão operacional e prevenção de riscos. É proibida a divulgação externa das informações contidas neste ambiente.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col">
       {/* Navbar Executiva */}
       <header className="sticky top-0 z-30 bg-navy-900/95 backdrop-blur-md border-b border-gold-500/20 shadow-lg">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-md shadow-gold-500/20">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center shadow-md shadow-gold-500/20 shrink-0">
               <ShieldAlert className="w-6 h-6 text-navy-950" strokeWidth={2.5} />
             </div>
             <div>
@@ -219,18 +312,28 @@ export default function App() {
                 Rede <span className="text-gold-500">Anfitrião</span>
               </h1>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Base colaborativa de alertas e ocorrências com hóspedes
+                Ambiente privado de consulta operacional entre anfitriões
               </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setModalAberto(true)}
-            className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-sm sm:text-base"
-          >
-            <Plus className="w-5 h-5" strokeWidth={2.5} />
-            <span>Registrar Ocorrência</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setModalAberto(true)}
+              className="inline-flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-gold-500/15 active:scale-95 text-sm"
+            >
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2.5} />
+              <span>Registrar Ocorrência</span>
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="p-2.5 rounded-xl bg-navy-800 hover:bg-navy-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+              title="Bloquear tela / Sair"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -249,13 +352,13 @@ export default function App() {
         <div className="bg-gradient-to-br from-navy-900 to-navy-800 border border-gold-500/20 rounded-2xl p-6 sm:p-8 shadow-2xl mb-8">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gold-400 bg-gold-500/10 border border-gold-500/25 px-3 py-1 rounded-full mb-3">
-              <AlertTriangle className="w-3.5 h-3.5" /> Consulta Preventiva de Hóspedes
+              <AlertTriangle className="w-3.5 h-3.5" /> Consulta Preventiva Interna
             </span>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
               Pesquise pelo nome do hóspede ou acompanhante
             </h2>
             <p className="text-slate-300 text-sm sm:text-base mb-6">
-              Verifique se há relatos negativos ou ocorrências registradas por outros anfitriões antes de liberar a reserva.
+              Verifique registros operacionais anteriores relatados por anfitriões parceiros antes de confirmar uma estadia.
             </p>
           </div>
 
@@ -302,8 +405,8 @@ export default function App() {
             </h3>
             <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
               {busca
-                ? 'Não encontramos ocorrências negativas para "' + busca + '" nem como titular nem como acompanhante.'
-                : 'Seja o primeiro a registrar um alerta para ajudar outros anfitriões.'}
+                ? 'Não encontramos ocorrências para "' + busca + '" nem como titular nem como acompanhante.'
+                : 'Seja o primeiro a registrar uma ocorrência operacional.'}
             </p>
             <button
               onClick={() => {
@@ -420,6 +523,19 @@ export default function App() {
         )}
       </main>
 
+      {/* Rodapé de Governança e Responsabilidade */}
+      <footer className="border-t border-slate-800/80 bg-navy-900/50 py-5 px-4 sm:px-6 mt-12">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <Scale className="w-4 h-4 text-gold-500 shrink-0" />
+            <span>
+              Base privada de uso interno. Cada anfitrião é integralmente responsável pela veracidade e comprovação dos fatos relatados.
+            </span>
+          </div>
+          <span className="text-slate-500 shrink-0">Uso confidencial • Proibida reprodução externa</span>
+        </div>
+      </footer>
+
       {/* Modal de Novo Relato */}
       {modalAberto && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -534,26 +650,27 @@ export default function App() {
               {/* Relato da Experiência */}
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1.5">
-                  Relato Detalhado do Problema *
+                  Relato Objetivo da Ocorrência *
                 </label>
                 <textarea
                   required
                   rows={4}
                   value={relato}
                   onChange={(e) => setRelato(e.target.value)}
-                  placeholder="Descreva o ocorrido (sujeira, danos, hóspedes extras, desrespeito às regras do condomínio, etc.)..."
+                  placeholder="Descreva apenas fatos objetivos comprováveis ocorridos durante a estadia (evite inserir documentos como CPF ou dados sensíveis)..."
                   className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-4 py-3 text-white placeholder-slate-500 outline-none text-sm"
                 />
               </div>
 
-              {/* Identificação Opcional do Anfitrião e Plataforma */}
+              {/* Identificação Obrigatória do Anfitrião e Plataforma */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Seu Nome ou Operação (Opcional)
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Seu Nome ou Empresa Responsável *
                   </label>
                   <input
                     type="text"
+                    required
                     value={anfitriaoNome}
                     onChange={(e) => setAnfitriaoNome(e.target.value)}
                     placeholder="Digite seu nome ou da empresa"
@@ -561,7 +678,7 @@ export default function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
                     Canal da Reserva
                   </label>
                   <select
@@ -579,6 +696,20 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Termo de Responsabilidade */}
+              <label className="flex items-start gap-2.5 bg-navy-950/80 border border-slate-800 rounded-xl p-3.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  required
+                  checked={aceiteResponsabilidade}
+                  onChange={(e) => setAceiteResponsabilidade(e.target.checked)}
+                  className="mt-0.5 accent-gold-500"
+                />
+                <span className="text-xs text-slate-300 leading-relaxed">
+                  Declaro que as informações acima são verdadeiras, baseadas em fatos objetivos da hospedagem e que possuo registros/comprovantes do ocorrido, assumindo integral responsabilidade pelo conteúdo publicado.
+                </span>
+              </label>
+
               {/* Botões de Ação */}
               <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
                 <button
@@ -590,7 +721,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  disabled={enviando}
+                  disabled={enviando || !aceiteResponsabilidade}
                   className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-gold-500/15"
                 >
                   {enviando ? 'Salvando...' : 'Publicar Ocorrência'}
