@@ -369,7 +369,23 @@ export default function App() {
       .order('created_at', { ascending: true });
 
     if (!error && data) {
-      setUsuariosLista(data);
+      const agora = Date.now();
+      const normalizados = data.map((u) => {
+        const vencido =
+          !u.is_admin &&
+          Boolean(u.data_vencimento_bloqueio) &&
+          new Date(u.data_vencimento_bloqueio as string).getTime() <= agora;
+        const bloqueadoEfetivo = Boolean(u.acesso_bloqueado) || vencido;
+        return {
+          ...u,
+          acesso_bloqueado: bloqueadoEfetivo,
+          motivo_bloqueio:
+            bloqueadoEfetivo && !u.motivo_bloqueio
+              ? 'Pendência financeira / cobrança vencida.'
+              : u.motivo_bloqueio,
+        };
+      });
+      setUsuariosLista(normalizados);
     }
     setCarregandoUsuarios(false);
   }
@@ -2012,3 +2028,4 @@ export default function App() {
     </div>
   );
 }
+
