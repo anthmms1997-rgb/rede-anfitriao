@@ -46,8 +46,7 @@ const TAGS_DISPONIVEIS: TagOption[] = [
 ];
 
 const SENHA_EXCLUSAO = '15975300';
-const STORAGE_USER_KEY = 'rede_anfitriao_user_v2';
-const STORAGE_TERMS_KEY = 'rede_anfitriao_termos_aceitos_v1';
+const STORAGE_USER_KEY = 'rede_anfitriao_user_v3';
 
 export default function App() {
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioAcesso | null>(() => {
@@ -59,13 +58,7 @@ export default function App() {
     }
   });
 
-  const [termosAceitos, setTermosAceitos] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem(STORAGE_TERMS_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [salvandoTermos, setSalvandoTermos] = useState(false);
 
   const [carimboTempo, setCarimboTempo] = useState(() =>
     new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -172,10 +165,10 @@ export default function App() {
   }, [usuarioLogado]);
 
   useEffect(() => {
-    if (usuarioLogado && !usuarioLogado.primeiro_acesso && termosAceitos) {
+    if (usuarioLogado && !usuarioLogado.primeiro_acesso && usuarioLogado.termos_aceitos) {
       carregarAvaliacoes();
     }
-  }, [usuarioLogado, termosAceitos]);
+  }, [usuarioLogado]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -186,7 +179,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso')
+      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso, termos_aceitos')
       .eq('login', loginInput.trim().toLowerCase())
       .eq('senha', senhaLogin)
       .maybeSingle();
@@ -204,16 +197,37 @@ export default function App() {
     }
 
     sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(data));
-    sessionStorage.removeItem(STORAGE_TERMS_KEY);
-    setTermosAceitos(false);
     setUsuarioLogado(data);
     setLoginInput('');
     setSenhaLogin('');
   }
 
-  function handleAceitarTermosIniciais() {
-    sessionStorage.setItem(STORAGE_TERMS_KEY, 'true');
-    setTermosAceitos(true);
+  async function handleAceitarTermosIniciais() {
+    if (!usuarioLogado) return;
+
+    setSalvandoTermos(true);
+    const { error } = await supabase
+      .from('usuarios_acesso')
+      .update({
+        termos_aceitos: true,
+        termos_aceitos_em: new Date().toISOString(),
+      })
+      .eq('id', usuarioLogado.id);
+
+    setSalvandoTermos(false);
+
+    if (error) {
+      alert('Erro ao registrar ciência dos termos: ' + error.message);
+      return;
+    }
+
+    const usuarioAtualizado: UsuarioAcesso = {
+      ...usuarioLogado,
+      termos_aceitos: true,
+    };
+
+    sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(usuarioAtualizado));
+    setUsuarioLogado(usuarioAtualizado);
   }
 
   async function handleSalvarPrimeiroAcesso(e: React.FormEvent) {
@@ -312,9 +326,7 @@ export default function App() {
 
   function handleLogout() {
     sessionStorage.removeItem(STORAGE_USER_KEY);
-    sessionStorage.removeItem(STORAGE_TERMS_KEY);
     setUsuarioLogado(null);
-    setTermosAceitos(false);
     setAvaliacoes([]);
     setBusca('');
     setAdminAberto(false);
@@ -338,7 +350,7 @@ export default function App() {
     setCarregandoUsuarios(true);
     const { data, error } = await supabase
       .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso')
+      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso, termos_aceitos')
       .order('created_at', { ascending: true });
 
     if (!error && data) {
@@ -367,6 +379,7 @@ export default function App() {
         nome_exibicao: nomeFinal,
         is_admin: novoIsAdmin,
         primeiro_acesso: true,
+        termos_aceitos: false,
       },
     ]);
     setCriandoUsuario(false);
@@ -735,8 +748,8 @@ export default function App() {
     );
   }
 
-  // 3. TELA INSTITUCIONAL DE DIRETRIZES DE USO, SIGILO E COMPLIANCE (OBRIGATÓRIA AO ENTRAR)
-  if (!termosAceitos) {
+  // 3. TELA INSTITUCIONAL DE DIRETRIZES (EXIBIDA UMA ÚNICA VEZ POR USUÁRIO)
+  if (!usuarioLogado.termos_aceitos) {
     return (
       <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6">
         <div className="max-w-2xl w-full bg-navy-900 border border-gold-500/35 rounded-2xl shadow-2xl overflow-hidden">
@@ -746,7 +759,7 @@ export default function App() {
             </div>
             <div>
               <span className="text-[11px] uppercase tracking-wider text-gold-400 font-semibold block">
-                Governança e Compliance • Leitura Obrigatória
+                Governança e Compliance • Ciência Única Obrigatória
               </span>
               <h2 className="text-lg sm:text-xl font-bold text-white">
                 Diretrizes de Uso, Sigilo e Responsabilidade
@@ -757,7 +770,7 @@ export default function App() {
           <div className="p-5 sm:p-8 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed max-h-[68vh] overflow-y-auto">
             <p className="text-slate-200">
               Bem-vindo(a), <strong className="text-gold-400">{usuarioLogado.nome_exibicao}</strong>. A{' '}
-              <strong className="text-white">Rede Anfitrião</strong> é um ambiente privado de apoio operacional destinado exclusivamente à prevenção de danos materiais e gestão de riscos entre anfitriões autorizados. Para prosseguir, observe integralmente as seguintes diretrizes:
+              <strong className="text-white">Rede Anfitrião</strong> é um ambiente privado de apoio operacional destinado exclusivamente à prevenção de danos materiais e gestão de riscos entre anfitriões autorizados. Para liberar seu acesso definitivo, leia e aceite as diretrizes abaixo:
             </p>
 
             <div className="bg-navy-950/90 border border-slate-800 rounded-xl p-4 space-y-3.5">
@@ -810,11 +823,12 @@ export default function App() {
 
             <button
               type="button"
+              disabled={salvandoTermos}
               onClick={handleAceitarTermosIniciais}
-              className="inline-flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 text-navy-950 font-semibold px-6 py-3 rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-gold-500/15"
+              className="inline-flex items-center justify-center gap-2 bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-6 py-3 rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-gold-500/15"
             >
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              Li, compreendi e concordo com as diretrizes
+              {salvandoTermos ? 'Registrando ciência...' : 'Li, compreendi e concordo com as diretrizes'}
             </button>
           </div>
         </div>
@@ -1304,6 +1318,11 @@ export default function App() {
                             {user.primeiro_acesso && (
                               <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
                                 Aguardando 1º acesso
+                              </span>
+                            )}
+                            {user.termos_aceitos && (
+                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                Termos aceitos
                               </span>
                             )}
                           </div>
