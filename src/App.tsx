@@ -14,13 +14,16 @@ import {
   UserCheck,
   Trash2,
   Lock,
+  Unlock,
   LogOut,
   KeyRound,
   Scale,
   Settings,
   UserCog,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  Receipt,
+  Clock
 } from 'lucide-react';
 import { supabase, type AvaliacaoHospede, type UsuarioAcesso } from './lib/supabase';
 import { validarConteudoRelato } from './lib/moderacao';
@@ -45,7 +48,7 @@ const TAGS_DISPONIVEIS: TagOption[] = [
   { label: 'Não recomendado', type: 'danger' },
 ];
 
-const STORAGE_USER_KEY = 'rede_anfitriao_user_v3';
+const STORAGE_USER_KEY = 'rede_anfitriao_user_v4';
 
 export default function App() {
   const [usuarioLogado, setUsuarioLogado] = useState<UsuarioAcesso | null>(() => {
@@ -97,7 +100,7 @@ export default function App() {
   const [erroSenha, setErroSenha] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
-  // Estados do Painel Admin (Gerenciamento de Usuários)
+  // Estados do Painel Admin (Gerenciamento de Usuários e Cobrança)
   const [adminAberto, setAdminAberto] = useState(false);
   const [usuariosLista, setUsuariosLista] = useState<UsuarioAcesso[]>([]);
   const [carregandoUsuarios, setCarregandoUsuarios] = useState(false);
@@ -108,6 +111,15 @@ export default function App() {
   const [criandoUsuario, setCriandoUsuario] = useState(false);
   const [editandoSenhaId, setEditandoSenhaId] = useState<string | null>(null);
   const [senhaAlteradaInput, setSenhaAlteradaInput] = useState('');
+
+  // Modal de Cobrança & Bloqueio Automático por Usuário
+  const [usuarioCobranca, setUsuarioCobranca] = useState<UsuarioAcesso | null>(null);
+  const [valorCobrancaInput, setValorCobrancaInput] = useState('');
+  const [dataBloqueioInput, setDataBloqueioInput] = useState('');
+  const [cicloDiasInput, setCicloDiasInput] = useState('30');
+  const [motivoCobrancaInput, setMotivoCobrancaInput] = useState('Pendência financeira / cobrança em aberto.');
+  const [bloquearImediatamenteInput, setBloquearImediatamenteInput] = useState(false);
+  const [salvandoCobranca, setSalvandoCobranca] = useState(false);
 
   // Estados do Formulário de Ocorrência
   const [nomeHospede, setNomeHospede] = useState('');
@@ -133,7 +145,7 @@ export default function App() {
 
   // Bloqueio de clique direito e atalhos de cópia/impressão no desktop
   useEffect(() => {
-    if (!usuarioLogado) return;
+    if (!usuarioLogado || usuarioLogado.acesso_bloqueado) return;
 
     const handleContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -164,7 +176,12 @@ export default function App() {
   }, [usuarioLogado]);
 
   useEffect(() => {
-    if (usuarioLogado && !usuarioLogado.primeiro_acesso && usuarioLogado.termos_aceitos) {
+    if (
+      usuarioLogado &&
+      !usuarioLogado.acesso_bloqueado &&
+      !usuarioLogado.primeiro_acesso &&
+      usuarioLogado.termos_aceitos
+    ) {
       carregarAvaliacoes();
     }
   }, [usuarioLogado]);
@@ -326,6 +343,7 @@ export default function App() {
     setBusca('');
     setAdminAberto(false);
     setModalTrocarMinhaSenha(false);
+    setUsuarioCobranca(null);
   }
 
   async function carregarAvaliacoes() {
@@ -345,7 +363,9 @@ export default function App() {
     setCarregandoUsuarios(true);
     const { data, error } = await supabase
       .from('usuarios_acesso')
-      .select('id, created_at, login, nome_exibicao, is_admin, primeiro_acesso, termos_aceitos')
+      .select(
+        'id, created_at, login, nome_exibicao, is_admin, primeiro_acesso, termos_aceitos, acesso_bloqueado, motivo_bloqueio, valor_cobranca, data_vencimento_bloqueio, ciclo_dias, ultimo_pagamento_em'
+      )
       .order('created_at', { ascending: true });
 
     if (!error && data) {
@@ -357,6 +377,110 @@ export default function App() {
   function abrirPainelAdmin() {
     setAdminAberto(true);
     carregarUsuarios();
+  }
+
+  function abrirModalCobranca(user: UsuarioAcesso) {
+    setUsuarioCobranca(user);
+    setValorCobrancaInput(user.valor_cobranca != null ? String(user.valor_cobranca) : '');
+    setCicloDiasInput(String(user.ciclo_dias || 30));
+    setMotivoCobrancaInput(user.motivo_bloqueio || 'Pendência financeira / cobrança em aberto.');
+    setBloquearImediatamenteInput(Boolean(user.acesso_bloqueado));
+
+    if (user.data_vencimento_bloqueio) {
+      const dt = new Date(user.data_vencimento_bloqueio);
+      const localIso = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      setDataBloqueioInput(localIso);
+    } else {
+      const padrao30Dias = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const localIso30 = new Date(padrao30Dias.getTime() - padrao30Dias.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+      setDataBloqueioInput(localIso30);
+    }
+  }
+
+  async function handleSalvarCobranca(e: React.FormEvent) {
+    e.preventDefault();
+    if (!usuarioCobranca) return;
+
+    const valorNumerico = valorCobrancaInput.trim()
+      ? Number(valorCobrancaInput.replace(',', '.'))
+      : null;
+
+    if (valorNumerico !== null && (Number.isNaN(valorNumerico) || valorNumerico < 0)) {
+      alert('Informe um valor válido para a cobrança.');
+      return;
+    }
+
+    const cicloNum = Math.max(1, parseInt(cicloDiasInput, 10) || 30);
+    const dataIso = dataBloqueioInput ? new Date(dataBloqueioInput).toISOString() : null;
+
+    setSalvandoCobranca(true);
+    const { data: ok, error } = await supabase.rpc('configurar_cobranca_usuario', {
+      p_id: usuarioCobranca.id,
+      p_valor: valorNumerico,
+      p_data_bloqueio: dataIso,
+      p_ciclo_dias: cicloNum,
+      p_bloquear_agora: bloquearImediatamenteInput,
+      p_motivo: motivoCobrancaInput,
+    });
+    setSalvandoCobranca(false);
+
+    if (error || !ok) {
+      alert('Erro ao salvar cobrança: ' + (error?.message || 'operação não concluída'));
+      return;
+    }
+
+    setUsuarioCobranca(null);
+    mostrarAviso(`Cobrança e bloqueio automático configurados para @${usuarioCobranca.login}.`);
+    carregarUsuarios();
+  }
+
+  async function handleConfirmarPagamento(user: UsuarioAcesso) {
+    const ciclo = user.ciclo_dias || 30;
+    const confirmar = window.confirm(
+      `Confirmar pagamento de @${user.login}, liberar o acesso agora e agendar próximo bloqueio automático para daqui a ${ciclo} dias?`
+    );
+    if (!confirmar) return;
+
+    const { data: ok, error } = await supabase.rpc('confirmar_pagamento_usuario', {
+      p_id: user.id,
+      p_ciclo_dias: ciclo,
+      p_nova_data_bloqueio: null,
+    });
+
+    if (!error && ok) {
+      mostrarAviso(`Pagamento confirmado para @${user.login}! Acesso liberado (+${ciclo} dias).`);
+      carregarUsuarios();
+    } else {
+      alert('Erro ao confirmar pagamento: ' + (error?.message || 'falha na confirmação'));
+    }
+  }
+
+  async function handleAlternarBloqueioManual(user: UsuarioAcesso) {
+    const vaiBloquear = !user.acesso_bloqueado;
+    const acaoTexto = vaiBloquear ? 'bloquear' : 'liberar';
+    const confirmar = window.confirm(`Deseja ${acaoTexto} o acesso de @${user.login}?`);
+    if (!confirmar) return;
+
+    const { data: ok, error } = await supabase.rpc('alterar_status_acesso_usuario', {
+      p_id: user.id,
+      p_bloquear: vaiBloquear,
+      p_motivo: 'Acesso suspenso temporariamente pela administração.',
+    });
+
+    if (!error && ok) {
+      mostrarAviso(
+        vaiBloquear
+          ? `Acesso de @${user.login} bloqueado.`
+          : `Acesso de @${user.login} liberado.`
+      );
+      carregarUsuarios();
+    } else {
+      alert('Erro ao atualizar status de acesso: ' + (error?.message || 'falha na atualização'));
+    }
   }
 
   async function handleCriarUsuario(e: React.FormEvent) {
@@ -583,6 +707,18 @@ export default function App() {
     });
   }
 
+  function formatarDataHora(isoString: string) {
+    return new Date(isoString).toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  }
+
+  function formatarMoeda(valor: number | null | undefined) {
+    if (valor == null) return 'Não definido';
+    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
   // 1. TELA DE LOGIN INDIVIDUAL (USUÁRIO + SENHA)
   if (!usuarioLogado) {
     return (
@@ -658,6 +794,41 @@ export default function App() {
           <p className="text-[11px] text-slate-500 text-center mt-6 leading-relaxed">
             Uso restrito à gestão operacional e prevenção de riscos. Cada acesso é rastreado e vinculado ao respectivo responsável.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 1B. TELA DE ACESSO BLOQUEADO (MANUAL OU VENCIMENTO DE COBRANÇA)
+  if (usuarioLogado.acesso_bloqueado) {
+    return (
+      <div className="min-h-screen bg-navy-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-navy-900 border border-rose-500/40 rounded-2xl p-6 sm:p-8 shadow-2xl text-center">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/40 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-7 h-7 text-rose-400" />
+          </div>
+          <span className="text-xs uppercase tracking-wider text-rose-400 font-semibold">
+            Acesso Temporariamente Suspenso
+          </span>
+          <h2 className="text-xl font-bold text-white mt-1">
+            Olá, {usuarioLogado.nome_exibicao}
+          </h2>
+          <p className="text-sm text-slate-300 mt-3 leading-relaxed">
+            {usuarioLogado.motivo_bloqueio ||
+              'Seu acesso encontra-se bloqueado até a regularização administrativa junto à gestão.'}
+          </p>
+          <p className="text-xs text-slate-400 mt-4 bg-navy-950/80 border border-slate-800 rounded-xl p-3">
+            Assim que a administração confirmar a regularização, sua conta voltará a operar normalmente.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-6 w-full inline-flex items-center justify-center gap-2 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-white font-medium py-3 rounded-xl transition-colors text-sm"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair da Conta
+          </button>
         </div>
       </div>
     );
@@ -868,7 +1039,7 @@ export default function App() {
               <button
                 onClick={abrirPainelAdmin}
                 className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-gold-500/40 text-gold-400 font-medium p-2 sm:px-3 sm:py-2.5 rounded-xl transition-all text-xs sm:text-sm"
-                title="Gerenciar logins e senhas de acesso"
+                title="Gerenciar logins, senhas e cobranças"
               >
                 <Settings className="w-4 h-4" />
                 <span className="hidden md:inline">Painel Admin</span>
@@ -1209,11 +1380,11 @@ export default function App() {
       {/* MODAL PAINEL ADMIN */}
       {adminAberto && usuarioLogado.is_admin && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-auto">
+          <div className="bg-navy-900 border border-gold-500/35 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden my-auto">
             <div className="px-4 sm:px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <UserCog className="w-5 h-5 text-gold-500 shrink-0" />
-                <h3 className="text-base sm:text-lg font-bold text-white">Painel Admin — Acessos</h3>
+                <h3 className="text-base sm:text-lg font-bold text-white">Painel Admin — Acessos & Cobrança</h3>
               </div>
               <button
                 onClick={() => setAdminAberto(false)}
@@ -1263,7 +1434,7 @@ export default function App() {
                       required
                       value={novaSenhaUsuario}
                       onChange={(e) => setNovaSenhaUsuario(e.target.value)}
-                      placeholder="Senha inicial"
+                      placeholder="Mínimo 6 caracteres"
                       className="w-full bg-navy-900 border border-slate-700 focus:border-gold-500 rounded-lg px-3 py-2 text-sm text-white outline-none"
                     />
                   </div>
@@ -1298,100 +1469,277 @@ export default function App() {
                 {carregandoUsuarios ? (
                   <p className="text-xs text-slate-400">Carregando usuários...</p>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     {usuariosLista.map((user) => (
                       <div
                         key={user.id}
-                        className="bg-navy-950 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        className="bg-navy-950 border border-slate-800 rounded-xl p-3.5 sm:p-4 flex flex-col gap-3"
                       >
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-bold text-white text-sm">{user.nome_exibicao}</span>
-                            <span className="text-xs px-2 py-0.5 rounded bg-navy-800 text-slate-300 border border-slate-700">
-                              @{user.login}
-                            </span>
-                            {user.is_admin && (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-gold-500/15 text-gold-400 border border-gold-500/30 font-medium">
-                                <ShieldCheck className="w-3 h-3" /> Admin
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-white text-sm">{user.nome_exibicao}</span>
+                              <span className="text-xs px-2 py-0.5 rounded bg-navy-800 text-slate-300 border border-slate-700">
+                                @{user.login}
                               </span>
-                            )}
-                            {user.primeiro_acesso && (
-                              <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                Aguardando 1º acesso
-                              </span>
-                            )}
-                            {user.termos_aceitos && (
-                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                                Termos aceitos
-                              </span>
+                              {user.is_admin && (
+                                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-gold-500/15 text-gold-400 border border-gold-500/30 font-medium">
+                                  <ShieldCheck className="w-3 h-3" /> Admin
+                                </span>
+                              )}
+                              {user.acesso_bloqueado ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 font-medium">
+                                  <Lock className="w-3 h-3" /> Bloqueado
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
+                                  <Unlock className="w-3 h-3" /> Ativo
+                                </span>
+                              )}
+                              {user.primeiro_acesso && (
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  1º acesso
+                                </span>
+                              )}
+                              {user.termos_aceitos && (
+                                <span className="text-[11px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                                  Termos aceitos
+                                </span>
+                              )}
+                            </div>
+
+                            {!user.is_admin && (
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-[11px] text-slate-400">
+                                <span className="inline-flex items-center gap-1">
+                                  <Receipt className="w-3 h-3 text-gold-400" />
+                                  Cobrança: <strong className="text-slate-200">{formatarMoeda(user.valor_cobranca)}</strong>
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-gold-400" />
+                                  Bloqueio automático:{' '}
+                                  <strong className="text-slate-200">
+                                    {user.data_vencimento_bloqueio
+                                      ? formatarDataHora(user.data_vencimento_bloqueio)
+                                      : 'Não agendado'}
+                                  </strong>
+                                </span>
+                                <span>Ciclo: <strong className="text-slate-200">{user.ciclo_dias || 30}d</strong></span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            Criado em {formatarData(user.created_at)}
-                          </p>
-                        </div>
 
-                        {editandoSenhaId === user.id ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <input
-                              type="text"
-                              autoFocus
-                              value={senhaAlteradaInput}
-                              onChange={(e) => setSenhaAlteradaInput(e.target.value)}
-                              placeholder="Nova senha..."
-                              className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-36"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleAlterarSenhaUsuario(user.id)}
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
-                            >
-                              Salvar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditandoSenhaId(null);
-                                setSenhaAlteradaInput('');
-                              }}
-                              className="text-slate-400 hover:text-white text-xs px-2 py-1.5"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditandoSenhaId(user.id);
-                                setSenhaAlteradaInput('');
-                              }}
-                              className="inline-flex items-center gap-1.5 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg transition-colors"
-                            >
-                              <Key className="w-3.5 h-3.5 text-gold-400" />
-                              Resetar Senha
-                            </button>
-
-                            {user.login !== 'admin' && (
+                          {editandoSenhaId === user.id ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="text"
+                                autoFocus
+                                value={senhaAlteradaInput}
+                                onChange={(e) => setSenhaAlteradaInput(e.target.value)}
+                                placeholder="Nova senha (6+)..."
+                                className="bg-navy-900 border border-gold-500 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-36"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleExcluirUsuario(user)}
-                                className="inline-flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs px-3 py-1.5 rounded-lg transition-colors"
-                                title="Revogar e excluir acesso"
+                                onClick={() => handleAlterarSenhaUsuario(user.id)}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Excluir
+                                Salvar
                               </button>
-                            )}
-                          </div>
-                        )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditandoSenhaId(null);
+                                  setSenhaAlteradaInput('');
+                                }}
+                                className="text-slate-400 hover:text-white text-xs px-2 py-1.5"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {!user.is_admin && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => abrirModalCobranca(user)}
+                                    className="inline-flex items-center gap-1 bg-gold-500/15 hover:bg-gold-500/25 border border-gold-500/40 text-gold-300 text-xs px-2.5 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Receipt className="w-3.5 h-3.5" />
+                                    Cobrança / Data
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleConfirmarPagamento(user)}
+                                    className="inline-flex items-center gap-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-xs px-2.5 py-1.5 rounded-lg transition-colors"
+                                    title="Confirmar pagamento, liberar acesso e iniciar novo ciclo"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    Confirmar Pgto
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAlternarBloqueioManual(user)}
+                                    className={
+                                      'inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-colors ' +
+                                      (user.acesso_bloqueado
+                                        ? 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/40 text-sky-300'
+                                        : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300')
+                                    }
+                                  >
+                                    {user.acesso_bloqueado ? (
+                                      <>
+                                        <Unlock className="w-3.5 h-3.5" />
+                                        Liberar Acesso
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Lock className="w-3.5 h-3.5" />
+                                        Bloquear
+                                      </>
+                                    )}
+                                  </button>
+                                </>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditandoSenhaId(user.id);
+                                  setSenhaAlteradaInput('');
+                                }}
+                                className="inline-flex items-center gap-1 bg-navy-800 hover:bg-navy-700 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition-colors"
+                              >
+                                <Key className="w-3.5 h-3.5 text-gold-400" />
+                                Resetar Senha
+                              </button>
+
+                              {user.login !== 'admin' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleExcluirUsuario(user)}
+                                  className="inline-flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs px-2.5 py-1.5 rounded-lg transition-colors"
+                                  title="Revogar e excluir acesso"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Excluir
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE COBRANÇA E BLOQUEIO AUTOMÁTICO POR DATA (ADMIN) */}
+      {usuarioCobranca && usuarioLogado.is_admin && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-navy-900 border border-gold-500/40 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 bg-navy-800 border-b border-slate-700/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-gold-500" />
+                <h3 className="text-base font-bold text-white">
+                  Cobrança • @{usuarioCobranca.login}
+                </h3>
+              </div>
+              <button
+                onClick={() => setUsuarioCobranca(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarCobranca} className="p-4 sm:p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Valor da Cobrança (R$)
+                  </label>
+                  <input
+                    type="text"
+                    value={valorCobrancaInput}
+                    onChange={(e) => setValorCobrancaInput(e.target.value)}
+                    placeholder="Ex.: 99.00"
+                    className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Ciclo de Renovação (dias)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={cicloDiasInput}
+                    onChange={(e) => setCicloDiasInput(e.target.value)}
+                    className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Data e Hora do Bloqueio Automático (sem confirmação)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={dataBloqueioInput}
+                  onChange={(e) => setDataBloqueioInput(e.target.value)}
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Aviso exibido ao usuário se bloqueado
+                </label>
+                <input
+                  type="text"
+                  value={motivoCobrancaInput}
+                  onChange={(e) => setMotivoCobrancaInput(e.target.value)}
+                  className="w-full bg-navy-950 border border-slate-700 focus:border-gold-500 rounded-xl px-3.5 py-2.5 text-white outline-none text-sm"
+                />
+              </div>
+
+              <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={bloquearImediatamenteInput}
+                  onChange={(e) => setBloquearImediatamenteInput(e.target.checked)}
+                  className="accent-rose-500"
+                />
+                Bloquear acesso imediatamente agora
+              </label>
+
+              <div className="pt-2 flex items-center justify-end gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setUsuarioCobranca(null)}
+                  className="px-4 py-2 rounded-xl text-sm text-slate-300 hover:bg-navy-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvandoCobranca}
+                  className="bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-navy-950 font-semibold px-4 sm:px-5 py-2 rounded-xl text-sm transition-colors"
+                >
+                  {salvandoCobranca ? 'Salvando...' : 'Salvar Cobrança'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1664,7 +2012,3 @@ export default function App() {
     </div>
   );
 }
-
-
-
-

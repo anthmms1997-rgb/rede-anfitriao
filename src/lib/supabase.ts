@@ -29,4 +29,10 @@ export interface UsuarioAcesso {
   is_admin: boolean;
   primeiro_acesso: boolean;
   termos_aceitos: boolean;
+  acesso_bloqueado?: boolean;
+  motivo_bloqueio?: string | null;
+  valor_cobranca?: number | null;
+  data_vencimento_bloqueio?: string | null;
+  ciclo_dias?: number;
+  ultimo_pagamento_em?: string | null;
 }
